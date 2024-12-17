@@ -5,7 +5,6 @@ import { SerializeUser } from "../../helpers/SerializeUser";
 import User from "../../models/User";
 import Plan from "../../models/Plan";
 import Company from "../../models/Company";
-import { request } from "express";
 
 interface Request {
   email: string;
@@ -14,14 +13,20 @@ interface Request {
   queueIds?: number[];
   companyId?: number;
   profile?: string;
-  allTicket?: string;
-  isTricked?: string;
-  whatsappId?: number;
   startWork?: string;
   endWork?: string;
-  spy?: string;
-  super: boolean;
-  defaultMenu: string;
+  whatsappId?: number;
+  allTicket?: string;
+  defaultTheme?: string;
+  defaultMenu?: string;
+  allowGroup?: boolean;
+  allHistoric?: string;
+  allUserChat?: string;
+  userClosePendingTicket?: string;
+  showDashboard?: string;
+  defaultTicketsManagerWidth?: number;
+  allowRealTime?: string;
+  allowConnections?: string;
 }
 
 interface Response {
@@ -38,16 +43,21 @@ const CreateUserService = async ({
   queueIds = [],
   companyId,
   profile = "admin",
-  allTicket,
-  spy,
-  whatsappId,
   startWork,
   endWork,
-  isTricked,
-  super: superUser,
+  whatsappId,
+  allTicket,
+  defaultTheme,
   defaultMenu,
+  allowGroup,
+  allHistoric,
+  allUserChat,
+  userClosePendingTicket,
+  showDashboard,
+  defaultTicketsManagerWidth = 550,
+  allowRealTime,
+  allowConnections
 }: Request): Promise<Response> => {
-
   if (companyId !== undefined) {
     const company = await Company.findOne({
       where: {
@@ -73,6 +83,7 @@ const CreateUserService = async ({
 
   const schema = Yup.object().shape({
     name: Yup.string().required().min(2),
+    allHistoric: Yup.string(),
     email: Yup.string()
       .email()
       .required()
@@ -87,12 +98,11 @@ const CreateUserService = async ({
           return !emailExists;
         }
       ),
-    password: Yup.string().required().min(5),
-    super: Yup.boolean().required()
+    password: Yup.string().required().min(5)
   });
 
   try {
-    await schema.validate({ email, password, name, super: superUser });
+    await schema.validate({ email, password, name });
   } catch (err) {
     throw new AppError(err.message);
   }
@@ -104,14 +114,20 @@ const CreateUserService = async ({
       name,
       companyId,
       profile,
-      allTicket,
-      whatsappId: whatsappId || null,
       startWork,
       endWork,
-      spy,
-      isTricked,
-      super: superUser,
+      whatsappId: whatsappId || null,
+      allTicket,
+      defaultTheme,
       defaultMenu,
+      allowGroup,
+      allHistoric,
+      allUserChat,
+      userClosePendingTicket,
+      showDashboard,
+      defaultTicketsManagerWidth,
+      allowRealTime,
+      allowConnections
     },
     { include: ["queues", "company"] }
   );

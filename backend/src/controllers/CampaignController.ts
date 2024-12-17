@@ -14,14 +14,15 @@ import FindService from "../services/CampaignService/FindService";
 
 import Campaign from "../models/Campaign";
 
-import AppError from "../errors/AppError";
-import { CancelService } from "../services/CampaignService/CancelService";
-import { RestartService } from "../services/CampaignService/RestartService";
-import TicketTag from "../models/TicketTag";
+import ContactTag from "../models/ContactTag";
 import Ticket from "../models/Ticket";
 import Contact from "../models/Contact";
 import ContactList from "../models/ContactList";
 import ContactListItem from "../models/ContactListItem";
+
+import AppError from "../errors/AppError";
+import { CancelService } from "../services/CampaignService/CancelService";
+import { RestartService } from "../services/CampaignService/RestartService";
 
 type IndexQuery = {
   searchParam: string;
@@ -37,7 +38,10 @@ type StoreData = {
   companyId: number;
   contactListId: number;
   tagListId: number | string;
-  fileListId: number;
+  userId: number | string;
+  queueId: number | string;
+  statusTicket: string;
+  openTicket: string;
 };
 
 type FindParams = {
@@ -82,11 +86,8 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
       const formattedDate = currentDate.toISOString();
 
       try {
-        const ticketTags = await TicketTag.findAll({ where: { tagId } });
-        const ticketIds = ticketTags.map((ticketTag) => ticketTag.ticketId);
-
-        const tickets = await Ticket.findAll({ where: { id: ticketIds } });
-        const contactIds = tickets.map((ticket) => ticket.contactId);
+        const contactTags = await ContactTag.findAll({ where: { tagId } });
+        const contactIds = contactTags.map((contactTag) => contactTag.contactId);
 
         const contacts = await Contact.findAll({ where: { id: contactIds } });
 
@@ -102,6 +103,7 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
           contactListId,
           companyId,
           isWhatsappValid: true,
+          isGroup: contact.isGroup
 
         }));
 
@@ -124,12 +126,11 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
           contactListId: contactListId,
         });
         const io = getIO();
-        io
-          .to(`company-${companyId}-mainchannel`)
+        io.of(String(companyId))
           .emit(`company-${companyId}-campaign`, {
-          action: "create",
-          record
-        });
+            action: "create",
+            record
+          });
         return res.status(200).json(record);
       })
       .catch((error) => {
@@ -146,12 +147,11 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     });
 
     const io = getIO();
-    io
-      .to(`company-${companyId}-mainchannel`)
+    io.of(String(companyId))
       .emit(`company-${companyId}-campaign`, {
-      action: "create",
-      record
-    });
+        action: "create",
+        record
+      });
 
     return res.status(200).json(record);
   }
@@ -170,6 +170,7 @@ export const update = async (
   res: Response
 ): Promise<Response> => {
   const data = req.body as StoreData;
+
   const { companyId } = req.user;
 
   const schema = Yup.object().shape({
@@ -190,12 +191,11 @@ export const update = async (
   });
 
   const io = getIO();
-  io
-    .to(`company-${companyId}-mainchannel`)
+  io.of(String(companyId))
     .emit(`company-${companyId}-campaign`, {
-    action: "update",
-    record
-  });
+      action: "update",
+      record
+    });
 
   return res.status(200).json(record);
 };
@@ -232,12 +232,11 @@ export const remove = async (
   await DeleteService(id);
 
   const io = getIO();
-  io
-    .to(`company-${companyId}-mainchannel`)
+  io.of(String(companyId))
     .emit(`company-${companyId}-campaign`, {
-    action: "delete",
-    id
-  });
+      action: "delete",
+      id
+    });
 
   return res.status(200).json({ message: "Campaign deleted" });
 };
@@ -275,11 +274,12 @@ export const deleteMedia = async (
   req: Request,
   res: Response
 ): Promise<Response> => {
+  const { companyId } = req.user;
   const { id } = req.params;
 
   try {
     const campaign = await Campaign.findByPk(id);
-    const filePath = path.resolve("public", `company${campaign.companyId}`, campaign.mediaPath);
+    const filePath = path.resolve("public", `company${companyId}`, campaign.mediaPath);
     const fileExists = fs.existsSync(filePath);
     if (fileExists) {
       fs.unlinkSync(filePath);

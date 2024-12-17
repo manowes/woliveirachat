@@ -10,7 +10,6 @@ import DeleteService from "../services/QuickMessageService/DeleteService";
 import FindService from "../services/QuickMessageService/FindService";
 
 import QuickMessage from "../models/QuickMessage";
-
 import { head } from "lodash";
 import fs from "fs";
 import path from "path";
@@ -27,7 +26,11 @@ type StoreData = {
   shortcode: string;
   message: string;
   userId: number | number;
+  mediaPath?: string;
+  mediaName?: string;
   geral: boolean;
+  isMedia: boolean;
+  visao: boolean;
 };
 
 type FindParams = {
@@ -36,8 +39,8 @@ type FindParams = {
 };
 
 export const index = async (req: Request, res: Response): Promise<Response> => {
-  const { searchParam, pageNumber, userId } = req.query as IndexQuery;
-  const { companyId } = req.user;
+  const { searchParam, pageNumber } = req.query as IndexQuery;
+  const { companyId, id: userId } = req.user;
 
   const { records, count, hasMore } = await ListService({
     searchParam,
@@ -53,9 +56,11 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   const { companyId } = req.user;
   const data = req.body as StoreData;
 
+
+
   const schema = Yup.object().shape({
     shortcode: Yup.string().required(),
-    message: Yup.string().required()
+    message: data.isMedia ? Yup.string().notRequired() : Yup.string().required()
   });
 
   try {
@@ -71,9 +76,8 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   });
 
   const io = getIO();
-  io
-    .to(`company-${companyId}-mainchannel`)
-    .emit(`company-${companyId}-quickmessage`, {
+  io.of(String(companyId))
+  .emit(`company-${companyId}-quickmessage`, {
     action: "create",
     record
   });
@@ -98,7 +102,7 @@ export const update = async (
 
   const schema = Yup.object().shape({
     shortcode: Yup.string().required(),
-    message: Yup.string().required()
+    message: data.isMedia ? Yup.string().notRequired() : Yup.string().required()
   });
 
   try {
@@ -116,7 +120,8 @@ export const update = async (
   });
 
   const io = getIO();
-  io.emit(`company-${companyId}-quickmessage`, {
+  io.of(String(companyId))
+  .emit(`company-${companyId}-quickmessage`, {
     action: "update",
     record
   });
@@ -134,7 +139,8 @@ export const remove = async (
   await DeleteService(id);
 
   const io = getIO();
-  io.emit(`company-${companyId}-quickmessage`, {
+  io.of(String(companyId))
+  .emit(`company-${companyId}-quickmessage`, {
     action: "delete",
     id
   });
@@ -159,13 +165,12 @@ export const mediaUpload = async (
   const { id } = req.params;
   const files = req.files as Express.Multer.File[];
   const file = head(files);
-  const { companyId } = req.user;
 
   try {
     const quickmessage = await QuickMessage.findByPk(id);
-
-    quickmessage.update ({
-      mediaPath: file.filename, companyId,
+    
+    await quickmessage.update ({
+      mediaPath: file.filename,
       mediaName: file.originalname
     });
 
@@ -189,7 +194,7 @@ export const deleteMedia = async (
     if (fileExists) {
       fs.unlinkSync(filePath);
     }
-    quickmessage.update ({
+    await quickmessage.update ({
       mediaPath: null,
       mediaName: null
     });

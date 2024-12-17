@@ -1,16 +1,25 @@
-import {Request, Response} from "express";
+import { Request, Response } from "express";
+import DashboardDataService, { DashboardData, Params } from "../services/ReportService/DashbardDataService";
+import { TicketsAttendance } from "../services/ReportService/TicketsAttendance";
+import { TicketsDayService } from "../services/ReportService/TicketsDayService";
+import TicketsQueuesService from "../services/TicketServices/TicketsQueuesService";
 
-import DashboardDataService, {
-  DashboardData,
-  Params
-} from "../services/ReportService/DashbardDataService";
-import TicketsAttendanceService from "../services/ReportService/TicketsAttendanceService";
-import TicketsDayService from "../services/ReportService/TicketsDayService";
-import TicketsQueueService from "../services/ReportService/TicketsQueueService";
+type IndexQuery = {
+  initialDate: string;
+  finalDate: string;
+  companyId: number | any;
+};
 
+type IndexQueryPainel = {
+  dateStart: string;
+  dateEnd: string;
+  status: string[];
+  queuesIds: string[];
+  showAll: string;
+};
 export const index = async (req: Request, res: Response): Promise<Response> => {
   const params: Params = req.query;
-  const {companyId} = req.user;
+  const { companyId } = req.user;
   let daysInterval = 3;
 
   const dashboardData: DashboardData = await DashboardDataService(
@@ -20,57 +29,43 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
   return res.status(200).json(dashboardData);
 };
 
-export const reportsUsers = async (
+export const reportsUsers = async (req: Request, res: Response): Promise<Response> => {
+
+  const { initialDate, finalDate, companyId } = req.query as IndexQuery
+
+  const { data } = await TicketsAttendance({ initialDate, finalDate, companyId });
+
+  return res.json({ data });
+
+}
+
+export const reportsDay = async (req: Request, res: Response): Promise<Response> => {
+
+  const { initialDate, finalDate, companyId } = req.query as IndexQuery
+
+  const { count, data } = await TicketsDayService({ initialDate, finalDate, companyId });
+
+  return res.json({ count, data });
+
+}
+
+export const DashTicketsQueues = async (
   req: Request,
   res: Response
 ): Promise<Response> => {
-  const {companyId} = req.user;
-  const dateStart = req.query.dateStart as string;
-  const dateEnd = req.query.dateEnd as string;
+  const { companyId, profile, id: userId } = req.user;
+  const { dateStart, dateEnd, status, queuesIds, showAll } = req.query as IndexQueryPainel;
 
+  const tickets = await TicketsQueuesService({
+    showAll: profile === "admin" ? showAll : false,
+    dateStart,
+    dateEnd,
+    status,
+    queuesIds,
+    userId,
+    companyId,
+    profile
+  });
 
-  return res.status(200).json({
-      data: await TicketsAttendanceService({
-        companyId,
-        dateStart,
-        dateEnd
-      })
-    }
-  );
+  return res.status(200).json(tickets);
 };
-
-
-export const ticketsDay = async (req: Request, res: Response): Promise<Response> => {
-  const {companyId} = req.user;
-
-  const dateStart = req.query.initialDate as string;
-  const dateEnd = req.query.finalDate as string;
-
-  return res.status(200).json({
-    data: await TicketsDayService({
-      companyId,
-      dateStart,
-      dateEnd
-    })
-  });
-}
-
-export const DashTicketsQueues = async (req: Request, res: Response): Promise<Response> => {
-  const {companyId} = req.user;
-  const dateStart = req.query.dateStart as string;
-  const dateEnd = req.query.dateEnd as string;
-  const status = req.query.status as string;
-  const userId = req.user.id;
-  const profile = req.user.profile;
-
-  return res.status(200).json({
-    data: await TicketsQueueService({
-      companyId,
-      dateStart,
-      dateEnd,
-      status,
-      userId,
-      profile
-    })
-  });
-}

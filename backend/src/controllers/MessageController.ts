@@ -1,157 +1,303 @@
-import {Request, Response} from "express";
+import { Request, Response } from "express";
 import AppError from "../errors/AppError";
+import fs from "fs";
 
 import SetTicketMessagesAsRead from "../helpers/SetTicketMessagesAsRead";
-import {getIO} from "../libs/socket";
+import { getIO } from "../libs/socket";
 import Message from "../models/Message";
-import Ticket from "../models/Ticket";
 import Queue from "../models/Queue";
 import User from "../models/User";
 import Whatsapp from "../models/Whatsapp";
-import formatBody from "../helpers/Mustache";
+import { verify } from "jsonwebtoken";
+import authConfig from "../config/auth";
+import path from "path";
+import { isNil, isNull } from "lodash";
+import { Mutex } from "async-mutex";
 
 import ListMessagesService from "../services/MessageServices/ListMessagesService";
 import ShowTicketService from "../services/TicketServices/ShowTicketService";
-import FindOrCreateTicketService from "../services/TicketServices/FindOrCreateTicketService";
-import UpdateTicketService from "../services/TicketServices/UpdateTicketService";
 import DeleteWhatsAppMessage from "../services/WbotServices/DeleteWhatsAppMessage";
-import SendWhatsAppMedia, {SendWhatsAppMediaFileAddress} from "../services/WbotServices/SendWhatsAppMedia";
+import SendWhatsAppMedia from "../services/WbotServices/SendWhatsAppMedia";
 import SendWhatsAppMessage from "../services/WbotServices/SendWhatsAppMessage";
-import SendWhatsAppReaction from "../services/WbotServices/SendWhatsAppReaction";
+import CreateMessageService from "../services/MessageServices/CreateMessageService";
+
+import { sendFacebookMessageMedia } from "../services/FacebookServices/sendFacebookMessageMedia";
+import sendFaceMessage from "../services/FacebookServices/sendFacebookMessage";
+
+import ShowPlanCompanyService from "../services/CompanyService/ShowPlanCompanyService";
+import ListMessagesServiceAll from "../services/MessageServices/ListMessagesServiceAll";
+import ShowContactService from "../services/ContactServices/ShowContactService";
+import FindOrCreateTicketService from "../services/TicketServices/FindOrCreateTicketService";
+
+import Contact from "../models/Contact";
+
+import UpdateTicketService from "../services/TicketServices/UpdateTicketService";
+import ListSettingsService from "../services/SettingServices/ListSettingsService";
+import ShowMessageService, { GetWhatsAppFromMessage } from "../services/MessageServices/ShowMessageService";
+import CompaniesSettings from "../models/CompaniesSettings";
+import { verifyMessageFace, verifyMessageMedia } from "../services/FacebookServices/facebookMessageListener";
+import EditWhatsAppMessage from "../services/MessageServices/EditWhatsAppMessage";
 import CheckContactNumber from "../services/WbotServices/CheckNumber";
-import CheckIsValidContact from "../services/WbotServices/CheckIsValidContact";
-import EditWhatsAppMessage from "../services/WbotServices/EditWhatsAppMessage";
-import GetProfilePicUrl from "../services/WbotServices/GetProfilePicUrl";
-
-import TranscreveAudioService from "../services/MessageServices/TranslateAudioService";
-import TranslateAudioService from "../services/MessageServices/TranslateAudioService";
-
-import CreateOrUpdateContactService from "../services/ContactServices/CreateOrUpdateContactService";
-import ShowMessageService, {GetWhatsAppFromMessage} from "../services/MessageServices/ShowMessageService";
-import {ShowContactService1} from "../services/ContactServices/ShowContactService";
-import ShowUserService from "../services/UserServices/ShowUserService";
-import {firstQueueThisUser} from "../utils/user";
-import {notifyUpdate} from "../services/TicketServices/UpdateTicketService";
-import ListAllMessagesService from "../services/MessageServices/ListAllMessagesService";
-import {toBoolean} from "validator";
-
-import ffmpegPath from "ffmpeg-static";
-
-import ffmpeg from "fluent-ffmpeg";
-
-
-import crypto from "crypto";
-import GetWhatsappWbot from "../helpers/GetWhatsappWbot";
-import UserQueue from '../models/UserQueue';
-
-ffmpeg.setFfmpegPath(ffmpegPath);
 
 type IndexQuery = {
   pageNumber: string;
+  ticketTrakingId: string;
+  selectedQueues?: string;
 };
+
+interface TokenPayload {
+  id: string;
+  username: string;
+  profile: string;
+  companyId: number;
+  iat: number;
+  exp: number;
+}
+
 
 type MessageData = {
   body: string;
   fromMe: boolean;
-  isGroup: boolean;
   read: boolean;
-  vCard?: any;
   quotedMsg?: Message;
   number?: string;
-  closeTicket?: true;
+  isPrivate?: string;
+  vCard?: Contact;
 };
 
 export const index = async (req: Request, res: Response): Promise<Response> => {
-  const {ticketId} = req.params;
-  const {pageNumber} = req.query as IndexQuery;
-  const {companyId, profile} = req.user;
-  const queues: number[] = [];
+  const { ticketId } = req.params;
+  const { pageNumber, selectedQueues: queueIdsStringified } = req.query as IndexQuery;
+  const { companyId, profile } = req.user;
+  let queues: number[] = [];
 
-  if (profile !== "admin") {
-    const user = await User.findByPk(req.user.id, {
-      include: [{model: Queue, as: "queues"}]
-    });
+  const user = await User.findByPk(req.user.id, {
+    include: [{ model: Queue, as: "queues" }]
+  });
+
+  if (queueIdsStringified) {
+    queues = JSON.parse(queueIdsStringified);
+  } else {
     user.queues.forEach(queue => {
       queues.push(queue.id);
     });
   }
 
-  const {count, messages, ticket, hasMore} = await ListMessagesService({
+  const { count, messages, ticket, hasMore } = await ListMessagesService({
     pageNumber,
     ticketId,
     companyId,
-    queues
+    queues,
+    user
   });
 
-  SetTicketMessagesAsRead(ticket);
+  if (ticket.channel === "whatsapp" && ticket.whatsappId) {
+    SetTicketMessagesAsRead(ticket);
+  }
 
-  return res.json({count, messages, ticket, hasMore});
+  return res.json({ count, messages, ticket, hasMore });
 };
 
+function obterNomeEExtensaoDoArquivo(url) {
+  var urlObj = new URL(url);
+  var pathname = urlObj.pathname;
+  var filename = pathname.split('/').pop();
+  var parts = filename.split('.');
+
+  var nomeDoArquivo = parts[0];
+  var extensao = parts[1];
+
+  return `${nomeDoArquivo}.${extensao}`;
+}
+
 export const store = async (req: Request, res: Response): Promise<Response> => {
-  const {ticketId} = req.params;
-  const {body, quotedMsg, vCard}: MessageData = req.body;
+  const { ticketId } = req.params;
+
+  const { body, quotedMsg, vCard, isPrivate = "false" }: MessageData = req.body;
   const medias = req.files as Express.Multer.File[];
-  const {companyId, id} = req.user;
+  const { companyId } = req.user;
 
   const ticket = await ShowTicketService(ticketId, companyId);
 
-  if (ticket.status !== "open") {
-    await UpdateTicketService({
-      ticketId: ticket.id,
-      ticketData: {status: "open", userId: parseInt(id)},
-      companyId
-    });
-
+  if (ticket.channel === "whatsapp" && ticket.whatsappId) {
+    SetTicketMessagesAsRead(ticket);
   }
 
-  if (ticket.unreadMessages > 0)
-     SetTicketMessagesAsRead(ticket);
+  try {
+    if (medias) {
+      await Promise.all(
+        medias.map(async (media: Express.Multer.File, index) => {
+          if (ticket.channel === "whatsapp") {
+            await SendWhatsAppMedia({ media, ticket, body: Array.isArray(body) ? body[index] : body, isPrivate: isPrivate === "true", isForwarded: false });
+          }
 
-  if (medias) {
-    await Promise.all(
-      medias.map(async (media: Express.Multer.File, index) => {
-        return SendWhatsAppMedia({media, ticket, body: Array.isArray(body) ? body[index] : body})
-      }));
-  } else {
-    const send = await SendWhatsAppMessage({body, ticket, quotedMsg,
-    vCard
-    });
+          if (["facebook", "instagram"].includes(ticket.channel)) {
+            try {
+              const sentMedia = await sendFacebookMessageMedia({
+                media,
+                ticket,
+                body: Array.isArray(body) ? body[index] : body
+              });
+
+              if (ticket.channel === "facebook") {
+                await verifyMessageMedia(sentMedia, ticket, ticket.contact, true);
+              }
+            } catch (error) {
+              console.log(error);
+            }
+          }
+
+          //limpar arquivo nao utilizado mais após envio
+          const filePath = path.resolve("public", `company${companyId}`, media.filename);
+          const fileExists = fs.existsSync(filePath);
+
+          if (fileExists && isPrivate === "false") {
+            fs.unlinkSync(filePath);
+          }
+        })
+      );
+    } else {
+      if (ticket.channel === "whatsapp" && isPrivate === "false") {
+        await SendWhatsAppMessage({ body, ticket, quotedMsg, vCard });
+      } else if (ticket.channel === "whatsapp" && isPrivate === "true") {
+        const messageData = {
+          wid: `PVT${ticket.updatedAt.toString().replace(' ', '')}`,
+          ticketId: ticket.id,
+          contactId: undefined,
+          body,
+          fromMe: true,
+          mediaType: !isNil(vCard) ? 'contactMessage' : 'extendedTextMessage',
+          read: true,
+          quotedMsgId: null,
+          ack: 2,
+          remoteJid: ticket.contact?.remoteJid,
+          participant: null,
+          dataJson: null,
+          ticketTrakingId: null,
+          isPrivate: isPrivate === "true"
+        };
+
+        await CreateMessageService({ messageData, companyId: ticket.companyId });
+
+      } else if (["facebook", "instagram"].includes(ticket.channel)) {
+        const sendText = await sendFaceMessage({ body, ticket, quotedMsg });
+
+        if (ticket.channel === "facebook") {
+          await verifyMessageFace(sendText, body, ticket, ticket.contact, true);
+        }
+      }
+    }
+    return res.send();
+  } catch (error) {
+    console.log(error);
+    return res.status(400).json({ error: error.message });
   }
-
-  return res.send();
 };
 
-export const getAll = async (req: Request, res: Response): Promise<Response> => {
-  const dateStart = req.query.dateStart as string;
-  const dateEnd = req.query.dateEnd as string;
-  const fromMe = toBoolean(req.query.fromMe as string);
+export const forwardMessage = async (
+  req: Request,
+  res: Response
+): Promise<Response> => {
 
+  const { quotedMsg, signMessage, messageId, contactId } = req.body;
+  const { id: userId, companyId } = req.user;
+  const requestUser = await User.findByPk(userId);
 
-  const {companyId} = req.user;
+  if (!messageId || !contactId) {
+    return res.status(200).send("MessageId or ContactId not found");
+  }
+  const message = await ShowMessageService(messageId);
+  const contact = await ShowContactService(contactId, companyId);
 
-  const {count} = await ListAllMessagesService({
-    companyId,
-    fromMe,
-    dateStart,
-    dateEnd
+  if (!message) {
+    return res.status(404).send("Message not found");
+  }
+  if (!contact) {
+    return res.status(404).send("Contact not found");
+  }
+
+  const settings = await CompaniesSettings.findOne({
+    where: { companyId }
+  }
+  )
+
+  const whatsAppConnectionId = await GetWhatsAppFromMessage(message);
+  if (!whatsAppConnectionId) {
+    return res.status(404).send('Whatsapp from message not found');
+  }
+
+  const ticket = await ShowTicketService(message.ticketId, message.companyId);
+
+  const mutex = new Mutex();
+
+  const createTicket = await mutex.runExclusive(async () => {
+    const result = await FindOrCreateTicketService(
+      contact,
+      ticket?.whatsapp,
+      0,
+      ticket.companyId,
+      ticket.queueId,
+      requestUser.id,
+      contact.isGroup ? contact : null,
+      "whatsapp",
+      null,
+      true,
+      settings,
+      false,
+      false
+    );
+
+    return result;
   });
 
-  return res.json({count});
+  let ticketData;
 
-}
-export const edit = async (req: Request, res: Response): Promise<Response> => {
-  const {messageId} = req.params;
-  const {companyId} = req.user;
-  const {body}: MessageData = req.body;
+  if (isNil(createTicket?.queueId)) {
+    ticketData = {
+      status: createTicket.isGroup ? "group" : "open",
+      userId: requestUser.id,
+      queueId: ticket.queueId
+    }
+  } else {
+    ticketData = {
+      status: createTicket.isGroup ? "group" : "open",
+      userId: requestUser.id
+    }
+  }
 
-  const {ticketId, message} = await EditWhatsAppMessage({messageId, companyId, body});
-
-  const io = getIO();
-  io.to(ticketId.toString()).emit(`company-${companyId}-appMessage`, {
-    action: "update",
-    message
+  await UpdateTicketService({
+    ticketData,
+    ticketId: createTicket.id,
+    companyId: createTicket.companyId
   });
+
+  let body = message.body;
+  if (message.mediaType === 'conversation' || message.mediaType === 'extendedTextMessage') {
+    await SendWhatsAppMessage({ body, ticket: createTicket, quotedMsg, isForwarded: message.fromMe ? false : true });
+  } else {
+
+    const mediaUrl = message.mediaUrl.replace(`:${process.env.PORT}`, '');
+    const fileName = obterNomeEExtensaoDoArquivo(mediaUrl);
+
+    if (body === fileName) {
+      body = "";
+    }
+
+    const publicFolder = path.join(__dirname, '..', '..', '..', 'backend', 'public');
+
+    const filePath = path.join(publicFolder, `company${createTicket.companyId}`, fileName)
+
+    const mediaSrc = {
+      fieldname: 'medias',
+      originalname: fileName,
+      encoding: '7bit',
+      mimetype: message.mediaType,
+      filename: fileName,
+      path: filePath
+    } as Express.Multer.File
+
+    await SendWhatsAppMedia({ media: mediaSrc, ticket: createTicket, body, isForwarded: message.fromMe ? false : true });
+  }
 
   return res.send();
 }
@@ -160,25 +306,162 @@ export const remove = async (
   req: Request,
   res: Response
 ): Promise<Response> => {
-  const {messageId} = req.params;
-  const {companyId} = req.user;
+  const { messageId } = req.params;
+  const { companyId } = req.user;
 
-  const message = await DeleteWhatsAppMessage(messageId);
-
+  const message = await DeleteWhatsAppMessage(messageId, companyId);
   const io = getIO();
 
-  io.to(message.ticketId.toString()).emit(`company-${companyId}-appMessage`, {
-    action: "update",
-    message
-  });
+  if (message.isPrivate) {
+    await Message.destroy({
+      where: {
+        id: message.id
+      }
+    });
+    io.of(String(companyId))
+      // .to(message.ticketId.toString())
+      .emit(`company-${companyId}-appMessage`, {
+        action: "delete",
+        message
+      });
+  }
+
+  io.of(String(companyId))
+    // .to(message.ticketId.toString())
+    .emit(`company-${companyId}-appMessage`, {
+      action: "update",
+      message
+    });
 
   return res.send();
 };
 
+export const allMe = async (req: Request, res: Response): Promise<Response> => {
+
+  const dateStart: any = req.query.dateStart;
+  const dateEnd: any = req.query.dateEnd;
+  const fromMe: any = req.query.fromMe;
+
+  const { companyId } = req.user;
+
+  const { count } = await ListMessagesServiceAll({
+    companyId,
+    fromMe,
+    dateStart,
+    dateEnd
+  });
+
+  return res.json({ count });
+};
+
 export const send = async (req: Request, res: Response): Promise<Response> => {
-  const {whatsappId} = req.params as unknown as { whatsappId: number };
   const messageData: MessageData = req.body;
   const medias = req.files as Express.Multer.File[];
+
+  try {
+
+    const authHeader = req.headers.authorization;
+    const [, token] = authHeader.split(" ");
+
+    const whatsapp = await Whatsapp.findOne({ where: { token } });
+    const companyId = whatsapp.companyId;
+    const company = await ShowPlanCompanyService(companyId);
+    const sendMessageWithExternalApi = company.plan.useExternalApi
+
+    if (sendMessageWithExternalApi) {
+
+      if (!whatsapp) {
+        throw new Error("Não foi possível realizar a operação");
+      }
+
+      if (messageData.number === undefined) {
+        throw new Error("O número é obrigatório");
+      }
+
+      const number = messageData.number;
+      const body = messageData.body;
+
+      if (medias) {
+        await Promise.all(
+          medias.map(async (media: Express.Multer.File) => {
+            req.app.get("queues").messageQueue.add(
+              "SendMessage",
+              {
+                whatsappId: whatsapp.id,
+                data: {
+                  number,
+                  body: media.originalname.replace('/', '-'),
+                  mediaPath: media.path
+                }
+              },
+              { removeOnComplete: true, attempts: 3 }
+            );
+          })
+        );
+      } else {
+        req.app.get("queues").messageQueue.add(
+          "SendMessage",
+          {
+            whatsappId: whatsapp.id,
+            data: {
+              number,
+              body
+            }
+          },
+          { removeOnComplete: true, attempts: 3 }
+        );
+      }
+      return res.send({ mensagem: "Mensagem enviada!" });
+    }
+    return res.status(400).json({ error: 'Essa empresa não tem permissão para usar a API Externa. Entre em contato com o Suporte para verificar nossos planos!' });
+
+  } catch (err: any) {
+
+    console.log(err);
+    if (Object.keys(err).length === 0) {
+      throw new AppError(
+        "Não foi possível enviar a mensagem, tente novamente em alguns instantes"
+      );
+    } else {
+      throw new AppError(err.message);
+    }
+  }
+};
+
+export const edit = async (req: Request, res: Response): Promise<Response> => {
+  const { messageId } = req.params;
+  const { companyId } = req.user;
+  const { body }: MessageData = req.body;
+
+  const { ticket, message } = await EditWhatsAppMessage({ messageId, body });
+
+  const io = getIO();
+  io.of(String(companyId))
+    // .to(String(ticket.id))
+    .emit(`company-${companyId}-appMessage`, {
+      action: "update",
+      message
+    });
+
+  io.of(String(companyId))
+    // .to(ticket.status)
+    // .to("notification")
+    // .to(String(ticket.id))
+    .emit(`company-${companyId}-ticket`, {
+      action: "update",
+      ticket
+    });
+  return res.send();
+}
+
+export const sendMessageFlow = async (
+  whatsappId: number,
+  body: any,
+  req: Request,
+  files?: Express.Multer.File[]
+): Promise<String> => {
+  const messageData = body;
+  const medias = files;
 
   try {
     const whatsapp = await Whatsapp.findByPk(whatsappId);
@@ -194,28 +477,10 @@ export const send = async (req: Request, res: Response): Promise<Response> => {
     const numberToTest = messageData.number;
     const body = messageData.body;
 
-    const companyId = whatsapp.companyId;
+    const companyId = messageData.companyId;
 
     const CheckValidNumber = await CheckContactNumber(numberToTest, companyId);
-    var isGroup = CheckValidNumber.jid.includes("@g.us");
-    console.log(CheckValidNumber);
-
-    const number = CheckValidNumber.jid.replace("@s.whatsapp.net", "").replace("@g.us", "");
-
-
-    const contactData = {
-      name: `${number}`,
-      number,
-      //     profilePicUrl,
-      isGroup: messageData.isGroup || isGroup,
-      companyId
-    };
-
-    const wbot = await GetWhatsappWbot(whatsapp);
-
-    const contact = await CreateOrUpdateContactService(contactData, wbot, CheckValidNumber.jid);
-
-    const ticket = await FindOrCreateTicketService(contact, whatsapp.id!, 0, companyId);
+    const number = CheckValidNumber.replace(/\D/g, "");
 
     if (medias) {
       await Promise.all(
@@ -226,43 +491,31 @@ export const send = async (req: Request, res: Response): Promise<Response> => {
               whatsappId,
               data: {
                 number,
-                body: body ? formatBody(body, ticket) : media.originalname,
-                mediaPath: media.path,
-                finalName: media.filename,
-                fileName: media.originalname
+                body: media.originalname,
+                mediaPath: media.path
               }
             },
-            {removeOnComplete: true, attempts: 3}
+            { removeOnComplete: true, attempts: 3 }
           );
         })
       );
     } else {
-      await SendWhatsAppMessage({body: formatBody(body, ticket), ticket});
+      req.app.get("queues").messageQueue.add(
+        "SendMessage",
+        {
+          whatsappId,
+          data: {
+            number,
+            body
+          }
+        },
 
-      /*
-      console.trace('last message x')
-
-      await ticket.update({
-        lastMessage: body,
-      });
-       */
+        { removeOnComplete: false, attempts: 3 }
+      );
     }
 
-    if (messageData.closeTicket) {
-      setTimeout(async () => {
-        await UpdateTicketService({
-          ticketId: ticket.id,
-          ticketData: {status: "closed"},
-          companyId
-        });
-      }, 1000);
-    }
-
-    await SetTicketMessagesAsRead(ticket);
-
-    return res.send({mensagem: "Mensagem enviada"});
+    return "Mensagem enviada";
   } catch (err: any) {
-    console.log(err);
     if (Object.keys(err).length === 0) {
       throw new AppError(
         "Não foi possível enviar a mensagem, tente novamente em alguns instantes"
@@ -272,132 +525,3 @@ export const send = async (req: Request, res: Response): Promise<Response> => {
     }
   }
 };
-
-export const addReaction = async (req: Request, res: Response): Promise<Response> => {
-  try {
-    const {messageId} = req.params;
-    const {type} = req.body; // O tipo de reação, por exemplo, 'like', 'heart', etc.
-    const {companyId, id} = req.user;
-
-    const message = await Message.findByPk(messageId);
-
-    const ticket = await Ticket.findByPk(message.ticketId, {
-      include: ["contact"]
-    });
-
-    if (!message) {
-      return res.status(404).send({message: "Mensagem não encontrada"});
-    }
-
-    // Envia a reação via WhatsApp
-    const reactionResult = await SendWhatsAppReaction({
-      messageId: messageId,
-      ticket: ticket,
-      reactionType: type
-    });
-
-    // Atualiza a mensagem com a nova reação no banco de dados (opcional, dependendo da necessidade)
-    const updatedMessage = await message.update({
-      reactions: [...message.reactions, {type: type, userId: id}]
-    });
-
-    const io = getIO();
-    io.to(message.ticketId.toString()).emit(`company-${companyId}-appMessage`, {
-      action: "update",
-      message
-    });
-
-    return res.status(200).send({
-      message: 'Reação adicionada com sucesso!',
-      reactionResult,
-      reactions: updatedMessage.reactions
-    });
-  } catch (error) {
-    console.error('Erro ao adicionar reação:', error);
-    if (error instanceof AppError) {
-      return res.status(400).send({message: error.message});
-    }
-    return res.status(500).send({message: 'Erro ao adicionar reação', error: error.message});
-  }
-};
-
-export const storeAudio = async (req: Request, res: Response): Promise<Response> => {
-  const audio = req.file as Express.Multer.File;
-  let textTranslate = '';
-  const outputFilename = generateRandomFilename();
-  const outputPath = `./public/${outputFilename}`;
-  await convertToMp3(audio.path, outputPath);
-  if (audio) {
-    textTranslate = await TranslateAudioService(outputPath);
-  }
-  return res.send(textTranslate || 'Transcrição não disponível');
-};
-
-function convertToMp3(inputPath, outputPath) {
-  return new Promise((resolve, reject) => {
-    ffmpeg(inputPath)
-      .toFormat('mp3')
-      .on('end', () => {
-        resolve(outputPath);
-      })
-      .on('error', (err) => {
-        console.error('Erro na conversão do áudio:', err);
-        reject(err);
-      })
-      .saveToFile(outputPath);
-  });
-}
-
-function generateRandomFilename() {
-  const randomId = crypto.randomBytes(16).toString('hex');
-  return randomId + '.mp3';
-}
-
-export const forwardMessage = async (
-  req: Request,
-  res: Response
-): Promise<Response> => {
-  console.log('>>>>>>>>>>>>>>>>>forwardMessage X<<<<<<<<<<<<<<<<<<<');
-  const {body, quotedMsg}: MessageData = req.body;
-  const messageId = req.body.messageId;
-  const contactId = req.body.contactId;
-
-  if (!messageId || !contactId) {
-    return res.status(200).send("MessageId or ContactId not found");
-  }
-  const message = await ShowMessageService(messageId);
-  const contact = await ShowContactService1(contactId);
-
-  if (!message) {
-    return res.status(404).send("Message not found");
-  }
-  if (!contact) {
-    return res.status(404).send("Contact not found");
-  }
-
-  const whatsAppConnectionId = await GetWhatsAppFromMessage(message);
-  if (!whatsAppConnectionId) {
-    return res.status(404).send('Whatsapp from message not found');
-  }
-
-  const companyId = req.user.companyId; // verificar
-  const ticket = await FindOrCreateTicketService(contact, whatsAppConnectionId, 0, companyId);
-
-  await SetTicketMessagesAsRead(ticket);
-
-  if (message.mediaType === 'conversation' || message.mediaType === 'extendedTextMessage') {
-    await SendWhatsAppMessage({body: message.body, ticket, quotedMsg});
-  } else {
-    await SendWhatsAppMediaFileAddress(message.mediaUrl || '', ticket, message.body); // função com erro
-  }
-  const user = await ShowUserService(req.user.id);
-  const queueId = await firstQueueThisUser(user);
-  ticket.status = 'open';
-  ticket.queueId = queueId?.id || null;
-  ticket.userId = user.id;
-  ticket.save();
-  const io = getIO();
-  notifyUpdate(io, ticket, ticket.id, companyId);
-
-  return res.send();
-}

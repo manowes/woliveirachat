@@ -2,6 +2,8 @@ import { Sequelize, Op } from "sequelize";
 import Queue from "../../models/Queue";
 import Company from "../../models/Company";
 import User from "../../models/User";
+import Plan from "../../models/Plan";
+import Ticket from "../../models/Ticket";
 
 interface Request {
   searchParam?: string;
@@ -14,8 +16,6 @@ interface Response {
   users: User[];
   count: number;
   hasMore: boolean;
-  onlineCount:number;
-  offlineCount:number;
 }
 
 const ListUsersService = async ({
@@ -44,33 +44,53 @@ const ListUsersService = async ({
 
   const { count, rows: users } = await User.findAndCountAll({
     where: whereCondition,
-    attributes: ["name", "id", "email", "companyId", "profile", "allTicket", "isTricked", "spy", "createdAt", "online", "startWork", "endWork", "defaultMenu" ],
+    attributes: [
+      "name",
+      "id",
+      "email",
+      "companyId",
+      "profile",
+      "online",
+      "startWork",
+      "endWork",
+      "profileImage"
+    ],
     limit,
     offset,
-    order: [["createdAt", "DESC"]],
+    order: [["name", "ASC"]],
     include: [
       { model: Queue, as: "queues", attributes: ["id", "name", "color"] },
-      { model: Company, as: "company", attributes: ["id", "name"] }
+      {
+        model: Company,
+        as: "company",
+        attributes: ["id", "name", "dueDate", "document"],
+        // include: [
+        //   {
+        //     model: Plan, as: "plan",
+        //     attributes: ["id",
+        //       "name",
+        //       "amount",
+        //       "useWhatsapp",
+        //       "useFacebook",
+        //       "useInstagram",
+        //       "useCampaigns",
+        //       "useSchedules",
+        //       "useInternalChat",
+        //       "useExternalApi",
+        //       "useIntegrations",
+        //       "useOpenAi",
+        //       "useKanban"
+        //     ]
+        //   },
+        // ]
+      }
     ]
   });
 
-  let onlineCount = 0;
-  let offlineCount = 0;
-
-  for (const user of users) {
-    if (user.online) {
-      onlineCount++;
-    }else{
-      offlineCount++;
-    }
-  }
-
   const hasMore = count > offset + users.length;
-
+  console.log(hasMore, count)
   return {
     users,
-    onlineCount,
-    offlineCount,
     count,
     hasMore
   };

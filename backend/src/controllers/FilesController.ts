@@ -45,12 +45,11 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   });
 
   const io = getIO();
-  io
-    .to(`company-${companyId}-mainchannel`)
+  io.of(String(companyId))
     .emit(`company${companyId}-file`, {
-    action: "create",
-    fileList
-  });
+      action: "create",
+      fileList
+    });
 
   return res.status(200).json(fileList);
 };
@@ -78,14 +77,14 @@ export const uploadMedias = async (req: Request, res: Response): Promise<Respons
         fileOpt = await FilesOptions.findOne({
           where: {
             fileId,
-            id: Array.isArray(id)? id[index] : id
+            id: Array.isArray(id) ? id[index] : id
           }
         });
 
-        fileOpt.update({
-          path: file.filename.replace('/','-'),
-          mediaType: Array.isArray(mediaType)? mediaType[index] : mediaType
-        }) ;
+        await fileOpt.update({
+          path: file.filename.replace('/', '-'),
+          mediaType: Array.isArray(mediaType) ? mediaType[index] : mediaType
+        });
       }
     }
 
@@ -110,9 +109,8 @@ export const update = async (
   const fileList = await UpdateService({ fileData, id: fileId, companyId });
 
   const io = getIO();
-  io
-    .to(`company-${companyId}-mainchannel`)
-    .emit(`company${companyId}-file`, {
+  io.of(String(companyId))
+  .emit(`company${companyId}-file`, {
     action: "update",
     fileList
   });
@@ -131,9 +129,8 @@ export const remove = async (
   await DeleteService(fileId, companyId);
 
   const io = getIO();
-  io
-    .to(`company-${companyId}-mainchannel`)
-    .emit(`company${companyId}-file`, {
+  io.of(String(companyId))
+  .emit(`company${companyId}-file`, {
     action: "delete",
     fileId
   });

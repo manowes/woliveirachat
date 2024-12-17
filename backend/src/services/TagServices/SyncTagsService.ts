@@ -1,37 +1,26 @@
-import { getIO } from "../../libs/socket";
-import Contact from "../../models/Contact";
 import Tag from "../../models/Tag";
-import Ticket from "../../models/Ticket";
-import TicketTag from "../../models/TicketTag";
+import Contact from "../../models/Contact";
+import ContactTag from "../../models/ContactTag";
 
 interface Request {
   tags: Tag[];
-  ticketId: number;
+  contactId: number;
 }
 
-const SyncTags = async ({ tags, ticketId }: Request): Promise<Ticket | null> => {
-  const io = getIO();
-  const ticket = await Ticket.findByPk(ticketId, { include: [Tag] });
-  const companyId = ticket?.companyId;
+const SyncTags = async ({
+  tags,
+  contactId
+}: Request): Promise<Contact | null> => {
+  const contact = await Contact.findByPk(contactId, { include: [Tag] });
 
-  const tagList = tags.map(t => ({ tagId: t.id, ticketId }));
+  const tagList = tags.map(t => ({ tagId: t.id, contactId }));
 
-  await TicketTag.destroy({ where: { ticketId } });
-  await TicketTag.bulkCreate(tagList);
+  await ContactTag.destroy({ where: { contactId } });
+  await ContactTag.bulkCreate(tagList);
 
-  const ticketReturn = await Ticket.findByPk(ticketId, { include: [Tag, Contact] });
+  contact?.reload();
 
-  ticket?.reload();
-
-  io.to(ticket.status)
-    .to("notification")
-    .to(ticketId.toString())
-    .emit(`company-${companyId}-ticket`, {
-      action: "tagUpdate",
-      ticket: ticketReturn
-    });
-
-  return ticket;
+  return contact;
 };
 
 export default SyncTags;

@@ -18,8 +18,10 @@ export async function CancelService(id: number) {
   const promises = [];
 
   for (let record of recordsToCancel) {
-    const job = await campaignQueue.getJob(record.jobId);
-    promises.push(job?.remove());
+    const job = await campaignQueue.getJob(+record.jobId);
+    if (job) {
+      promises.push(job.remove());
+    }
   }
 
   await Promise.all(promises);

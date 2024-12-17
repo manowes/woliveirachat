@@ -13,15 +13,15 @@ import {
   Unique,
   BelongsToMany,
   ForeignKey,
-  BelongsTo,
-  HasOne
+  BelongsTo
 } from "sequelize-typescript";
 import Queue from "./Queue";
 import Ticket from "./Ticket";
 import WhatsappQueue from "./WhatsappQueue";
 import Company from "./Company";
-import Prompt from "./Prompt";
 import QueueIntegrations from "./QueueIntegrations";
+import Prompt from "./Prompt";
+import { FlowBuilderModel } from "./FlowBuilder";
 
 @Table
 class Whatsapp extends Model<Whatsapp> {
@@ -61,7 +61,7 @@ class Whatsapp extends Model<Whatsapp> {
   greetingMessage: string;
 
   @Column
-  greetingMediaAttachment: string;
+  greetingMediaAttachment: string
 
   @Default("")
   @Column(DataType.TEXT)
@@ -74,10 +74,6 @@ class Whatsapp extends Model<Whatsapp> {
   @Default("")
   @Column(DataType.TEXT)
   outOfHoursMessage: string;
-
-  @Default("")
-  @Column(DataType.TEXT)
-  ratingMessage: string;
 
   @Column({ defaultValue: "stable" })
   provider: string;
@@ -117,19 +113,87 @@ class Whatsapp extends Model<Whatsapp> {
   @Column
   token: string;
 
+  @Column(DataType.TEXT)
+  facebookUserId: string;
+
+  @Column(DataType.TEXT)
+  facebookUserToken: string;
+
+  @Column(DataType.TEXT)
+  facebookPageUserId: string;
+
+  @Column(DataType.TEXT)
+  tokenMeta: string;
+
+  @Column(DataType.TEXT)
+  channel: string;
+
+  @Default(3)
+  @Column
+  maxUseBotQueues: number;
+
+  @Default(0)
+  @Column
+  timeUseBotQueues: string;
+
+  @AllowNull(true)
+  @Default(0)
+  @Column
+  expiresTicket: string;
+
   @Default(0)
   @Column
   timeSendQueue: number;
 
+  @ForeignKey(() => Queue)
   @Column
   sendIdQueue: number;
 
-  @ForeignKey(() => Prompt)
-  @Column
-  promptId: number;
+  @BelongsTo(() => Queue)
+  queueSend: Queue;
 
-  @BelongsTo(() => Prompt)
-  prompt: Prompt;
+  @Column
+  timeInactiveMessage: string;
+
+  @Column
+  inactiveMessage: string;
+
+  @Column
+  ratingMessage: string;
+
+  @Column
+  maxUseBotQueuesNPS: number;
+
+  @Column
+  expiresTicketNPS: number;
+
+  @Column
+  whenExpiresTicket: string;
+
+  @Column
+  expiresInactiveMessage: string;
+
+  @Default("disabled")
+  @Column
+  groupAsTicket: string;
+  
+  @Column
+  importOldMessages: Date;
+
+  @Column
+  importRecentMessages: Date;
+
+  @Column
+  statusImportMessages: string;
+  
+  @Column
+  closedTicketsPostImported:boolean;
+
+  @Column
+  importOldMessagesGroups:boolean;
+
+  @Column
+  timeCreateNewTicket: number;
 
   @ForeignKey(() => QueueIntegrations)
   @Column
@@ -138,33 +202,44 @@ class Whatsapp extends Model<Whatsapp> {
   @BelongsTo(() => QueueIntegrations)
   queueIntegrations: QueueIntegrations;
 
+  @Column({
+    type: DataType.JSONB
+  })
+  schedules: [];
+
+  @ForeignKey(() => Prompt)
   @Column
-  maxUseBotQueues: number;
+  promptId: number;
+
+  @BelongsTo(() => Prompt)
+  prompt: Prompt;
 
   @Column
-  timeUseBotQueues: string;
+  collectiveVacationMessage: string;
 
   @Column
-  expiresTicket: number;
+  collectiveVacationStart: string;
 
   @Column
-  expiresInactiveMessage: string;
+  collectiveVacationEnd: string;
 
-
+  @ForeignKey(() => Queue)
   @Column
-  statusImportMessages: string;
+  queueIdImportMessages: number;
 
-  @Column
-  importOldMessages: string;
+  @BelongsTo(() => Queue)
+  queueImport: Queue;
 
+  @ForeignKey(() => FlowBuilderModel)
   @Column
-  importRecentMessages: string;
+  flowIdNotPhrase: number;
 
+  @ForeignKey(() => FlowBuilderModel)
   @Column
-  closedTicketsPostImported: boolean;
+  flowIdWelcome: number;
 
-  @Column
-  importOldMessagesGroups: boolean;
+  @BelongsTo(() => FlowBuilderModel)
+  flowBuilder: FlowBuilderModel
 }
 
 export default Whatsapp;

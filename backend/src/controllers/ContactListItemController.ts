@@ -67,12 +67,11 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   });
 
   const io = getIO();
-  io
-    .to(`company-${companyId}-mainchannel`)
+  io.of(String(companyId))
     .emit(`company-${companyId}-ContactListItem`, {
-    action: "create",
-    record
-  });
+      action: "create",
+      record
+    });
 
   return res.status(200).json(record);
 };
@@ -110,12 +109,11 @@ export const update = async (
   });
 
   const io = getIO();
-  io
-    .to(`company-${companyId}-mainchannel`)
+  io.of(String(companyId))
     .emit(`company-${companyId}-ContactListItem`, {
-    action: "update",
-    record
-  });
+      action: "update",
+      record
+    });
 
   return res.status(200).json(record);
 };
@@ -130,12 +128,11 @@ export const remove = async (
   await DeleteService(id);
 
   const io = getIO();
-  io
-    .to(`company-${companyId}-mainchannel`)
+  io.of(String(companyId))
     .emit(`company-${companyId}-ContactListItem`, {
-    action: "delete",
-    id
-  });
+      action: "delete",
+      id
+    });
 
   return res.status(200).json({ message: "Contact deleted" });
 };

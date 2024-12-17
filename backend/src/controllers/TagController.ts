@@ -8,57 +8,60 @@ import ListService from "../services/TagServices/ListService";
 import UpdateService from "../services/TagServices/UpdateService";
 import ShowService from "../services/TagServices/ShowService";
 import DeleteService from "../services/TagServices/DeleteService";
-import DeleteAllTagService from "../services/TagServices/DeleteAllTagService";
 import SimpleListService from "../services/TagServices/SimpleListService";
 import SyncTagService from "../services/TagServices/SyncTagsService";
 import KanbanListService from "../services/TagServices/KanbanListService";
+import ContactTag from "../models/ContactTag";
 
 type IndexQuery = {
   searchParam?: string;
   pageNumber?: string | number;
+  kanban?: number;
+  tagId?: number;
 };
 
 export const index = async (req: Request, res: Response): Promise<Response> => {
-  const { pageNumber, searchParam } = req.query as IndexQuery;
+  const { pageNumber, searchParam, kanban, tagId } = req.query as IndexQuery;
   const { companyId } = req.user;
 
   const { tags, count, hasMore } = await ListService({
     searchParam,
     pageNumber,
     companyId,
+    kanban,
+    tagId
   });
 
   return res.json({ tags, count, hasMore });
 };
 
 export const store = async (req: Request, res: Response): Promise<Response> => {
-  const { name, color, kanban } = req.body;
+  const { name, color, kanban,
+    timeLane,
+    nextLaneId,
+    greetingMessageLane,
+    rollbackLaneId } = req.body;
   const { companyId } = req.user;
 
   const tag = await CreateService({
     name,
     color,
-    kanban: kanban || null,
-    companyId
+    kanban,
+    companyId,
+    timeLane,
+    nextLaneId,
+    greetingMessageLane,
+    rollbackLaneId
   });
 
   const io = getIO();
-  io
-    .to(`company-${companyId}-mainchannel`)
-    .emit("tag", {
-    action: "create",
-    tag
-  });
+  io.of(String(companyId))
+    .emit(`company${companyId}-tag`, {
+      action: "create",
+      tag
+    });
 
   return res.status(200).json(tag);
-};
-
-export const kanban = async (req: Request, res: Response): Promise<Response> => {
-  const { companyId } = req.user;
-
-  const tags = await KanbanListService({ companyId });
-
-  return res.json({lista:tags});
 };
 
 export const show = async (req: Request, res: Response): Promise<Response> => {
@@ -73,20 +76,25 @@ export const update = async (
   req: Request,
   res: Response
 ): Promise<Response> => {
-  if (req.user.profile !== "admin") {
+  const { kanban } = req.body;
+
+  //console.log(kanban)
+  if (req.user.profile !== "admin" && kanban === 1) {
     throw new AppError("ERR_NO_PERMISSION", 403);
   }
 
   const { tagId } = req.params;
   const tagData = req.body;
+  const { companyId } = req.user;
 
   const tag = await UpdateService({ tagData, id: tagId });
 
   const io = getIO();
-  io.emit("tag", {
-    action: "update",
-    tag
-  });
+  io.of(String(companyId))
+    .emit(`company${companyId}-tag`, {
+      action: "update",
+      tag
+    });
 
   return res.status(200).json(tag);
 };
@@ -96,40 +104,35 @@ export const remove = async (
   res: Response
 ): Promise<Response> => {
   const { tagId } = req.params;
+  const { companyId } = req.user;
 
   await DeleteService(tagId);
 
   const io = getIO();
-  io.emit("tag", {
-    action: "delete",
-    tagId
-  });
+  io.of(String(companyId))
+    .emit(`company${companyId}-tag`, {
+      action: "delete",
+      tagId
+    });
 
   return res.status(200).json({ message: "Tag deleted" });
 };
 
-export const removeAll = async (
-  req: Request,
-  res: Response
-): Promise<Response> => {
-  const { companyId } = req.user;
-
-  try {
-    await DeleteAllTagService(companyId);
-    return res.status(200).send({ message: 'All tags deleted successfully' });
-  } catch (error) {
-    console.error(error);
-    return res.status(500).send({ message: 'Error deleting all tags' });
-  }
-};
-
 export const list = async (req: Request, res: Response): Promise<Response> => {
-  const { searchParam } = req.query as IndexQuery;
+  const { searchParam, kanban } = req.query as IndexQuery;
   const { companyId } = req.user;
 
-  const tags = await SimpleListService({ searchParam, companyId });
+  const tags = await SimpleListService({ searchParam, kanban, companyId });
 
   return res.json(tags);
+};
+
+export const kanban = async (req: Request, res: Response): Promise<Response> => {
+  const { companyId } = req.user;
+
+  const tags = await KanbanListService({ companyId });
+
+  return res.json({ lista: tags });
 };
 
 export const syncTags = async (
@@ -144,3 +147,30 @@ export const syncTags = async (
   return res.json(tags);
 };
 
+export const removeContactTag = async (
+  req: Request,
+  res: Response
+): Promise<Response> => {
+  const { tagId, contactId } = req.params;
+  const { companyId } = req.user;
+
+  console.log(tagId, contactId)
+
+  await ContactTag.destroy({
+    where: {
+      tagId,
+      contactId
+    }
+  });
+
+  const tag = await ShowService(tagId);
+
+  const io = getIO();
+  io.of(String(companyId))
+    .emit(`company${companyId}-tag`, {
+      action: "update",
+      tag
+    });
+
+  return res.status(200).json({ message: "Tag deleted" });
+};

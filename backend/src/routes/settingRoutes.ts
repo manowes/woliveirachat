@@ -1,40 +1,37 @@
 import { Router } from "express";
-import multer from "multer";
 import isAuth from "../middleware/isAuth";
-import isSuper from "../middleware/isSuper";
 import envTokenAuth from "../middleware/envTokenAuth";
+import multer from "multer";
+
 import * as SettingController from "../controllers/SettingController";
-import uploadPublicConfig from "../config/uploadPublic";
+import isSuper from "../middleware/isSuper";
+import uploadConfig from "../config/upload";
 import uploadPrivateConfig from "../config/privateFiles";
-import isAdmin from "../middleware/isAdmin";
+
+const upload = multer(uploadConfig);
+const uploadPrivate = multer(uploadPrivateConfig);
 
 const settingRoutes = Router();
 
 settingRoutes.get("/settings", isAuth, SettingController.index);
 
-settingRoutes.get("/settingsregister", SettingController.getSettingRegister)
-
-settingRoutes.get("/public-settings/:settingKey", SettingController.publicShow);
-settingRoutes.get("/public-settings", SettingController.publicIndex);
+settingRoutes.get("/settings/:settingKey", isAuth, SettingController.showOne);
 
 // change setting key to key in future
-settingRoutes.put("/settings/:settingKey", isAuth, isAdmin, SettingController.update);
+settingRoutes.put("/settings/:settingKey", isAuth, SettingController.update);
 
-const uploadPublic = multer(uploadPublicConfig);
-const uploadPrivate = multer(uploadPrivateConfig);
+settingRoutes.get("/setting/:settingKey", isAuth, SettingController.getSetting);
 
-settingRoutes.post(
-  "/settings/logo",
-  isAuth, isSuper,
-  uploadPublic.single("file"),
-  SettingController.storeLogo
-);
+settingRoutes.put("/setting/:settingKey", isAuth, SettingController.updateOne);
+
+settingRoutes.get("/public-settings/:settingKey", envTokenAuth, SettingController.publicShow);
+
+settingRoutes.post("/settings-whitelabel/logo", isAuth, upload.single("file"), SettingController.storeLogo);
 
 settingRoutes.post(
   "/settings/privateFile",
-  isAuth, isSuper,
+  isAuth,
   uploadPrivate.single("file"),
   SettingController.storePrivateFile
 )
-
 export default settingRoutes;

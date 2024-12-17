@@ -17,8 +17,8 @@ interface Request {
   pageNumber?: string;
   status?: string;
   date?: string;
-  startDate?: string;
-  endDate?: string;
+  dateStart?: string;
+  dateEnd?: string;
   updatedAt?: string;
   showAll?: string;
   userId: string;
@@ -43,6 +43,8 @@ const ListTicketsServiceKanban = async ({
   users,
   status,
   date,
+  dateStart,
+  dateEnd,
   updatedAt,
   showAll,
   userId,
@@ -59,7 +61,7 @@ const ListTicketsServiceKanban = async ({
     {
       model: Contact,
       as: "contact",
-      attributes: ["id", "name", "number", "email", "presence"]
+      attributes: ["id", "name", "number", "email", "companyId", "urlPicture"]
     },
     {
       model: Queue,
@@ -84,8 +86,7 @@ const ListTicketsServiceKanban = async ({
   ];
 
   if (showAll === "true") {
-    //whereCondition = { queueId: { [Op.or]: [queueIds, null] } };
-    whereCondition = {queueId: {[Op.or]: [queueIds, null]}, userId}; // Busca com o queueId ou null e com o userId
+    whereCondition = { queueId: { [Op.or]: [queueIds, null] } };
   }
 
   whereCondition = {
@@ -136,10 +137,10 @@ const ListTicketsServiceKanban = async ({
     };
   }
 
-  if (date) {
+  if (dateStart && dateEnd) {
     whereCondition = {
       createdAt: {
-        [Op.between]: [+startOfDay(parseISO(date)), +endOfDay(parseISO(date))]
+        [Op.between]: [+startOfDay(parseISO(dateStart)), +endOfDay(parseISO(dateEnd))]
       }
     };
   }
@@ -156,7 +157,7 @@ const ListTicketsServiceKanban = async ({
   }
 
   if (withUnreadMessages === "true") {
-    const user = await ShowUserService(userId);
+    const user = await ShowUserService(userId, companyId);
     const userQueueIds = user.queues.map(queue => queue.id);
 
     whereCondition = {
@@ -208,7 +209,7 @@ const ListTicketsServiceKanban = async ({
     };
   }
 
-  const limit = 40;
+  const limit = 400;
   const offset = limit * (+pageNumber - 1);
 
   whereCondition = {

@@ -1,63 +1,79 @@
 import {
-  Table,
-  Column,
-  CreatedAt,
-  UpdatedAt,
-  Model,
-  PrimaryKey,
-  AutoIncrement,
-  AllowNull,
-  HasMany,
-  Unique,
-  BelongsTo,
-  ForeignKey
+    Table,
+    Column,
+    CreatedAt,
+    UpdatedAt,
+    Model,
+    PrimaryKey,
+    AutoIncrement,
+    ForeignKey,
+    AllowNull,
+    HasMany,
+    Unique
 } from "sequelize-typescript";
 import Company from "./Company";
 
 @Table({ tableName: "Invoices" })
 class Invoices extends Model<Invoices> {
-  @PrimaryKey
-  @AutoIncrement
-  @Column
-  id: number;
+    @PrimaryKey
+    @AutoIncrement
+    @Column
+    id: number;
 
-  @Column
-  detail: string;
+    @ForeignKey(() => Company)
+    @Column
+    companyId: number;
 
-  @Column
-  status: string;
+    @Column
+    dueDate: string;
 
-  @Column
-  value: number;
+    @Column
+    detail: string;
 
-  @Column
-  txId: string;
+    @Column
+    status: string;
 
-  @Column
-  payGw: string;
+    @Column
+    value: number;
 
-  @Column
-  payGwData: string;
+    @Column
+    users: number;
+  
+    @Column
+    connections: number;
+  
+    @Column
+    queues: number;
+  
+    @Column
+    useWhatsapp: boolean;   
+  
+    @Column
+    useFacebook: boolean;   
+  
+    @Column
+    useInstagram: boolean;   
+    
+    @Column
+    useCampaigns: boolean;   
+  
+    @Column
+    useSchedules: boolean;   
+  
+    @Column
+    useInternalChat: boolean;   
+    
+    @Column
+    useExternalApi: boolean;   
 
-  @CreatedAt
-  createdAt: Date;
+    @CreatedAt
+    createdAt: Date;
 
-  @UpdatedAt
-  updatedAt: Date;
+    @UpdatedAt
+    updatedAt: Date;
 
-  @Column
-  dueDate: string;
-
-  @Column
-  stripePaymentIntentId: string;
-
-  @ForeignKey(() => Company)
-  @Column
-  companyId: number;
-
-  @BelongsTo(() => Company)
-  company: Company;
-
+    @Column
+    linkInvoice: string;
 }
 
 export default Invoices;

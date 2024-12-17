@@ -1,98 +1,70 @@
-import {FindOptions} from "sequelize/types";
-import {Op} from "sequelize";
-import AppError from "../../errors/AppError";
-import Message from "../../models/Message";
-import Ticket from "../../models/Ticket";
-import ShowTicketService from "../TicketServices/ShowTicketService";
-import Queue from "../../models/Queue";
-import OldMessage from "../../models/OldMessage";
-import User from "../../models/User";
-import TicketTraking from "../../models/TicketTraking";
-import {Sequelize} from "sequelize-typescript";
-import moment from "moment";
-import Company from "../../models/Company";
+import sequelize from "../../database/index";
+import { QueryTypes } from "sequelize";
+
+interface Return {
+  data: {};
+  count: number;
+}
 
 interface Request {
+  initialDate: string;
+  finalDate: string;
   companyId: number;
-  dateStart: string;
-  dateEnd: string;
 }
 
-interface TicketsDay {
-  time: string;
+interface DataReturn {
   total: number;
+  data?: number;
+  horario?: string;
 }
 
-interface Response {
+export const TicketsDayService = async ({ initialDate, finalDate, companyId }: Request): Promise<Return> => {
 
-  count: number;
-  data: TicketsDay[];
+  let sql = '';
+  let count = 0;
 
-}
-
-const TicketsDayService = async ({
-
-                                   companyId,
-
-                                   dateStart,
-                                   dateEnd,
-
-                                 }: Request): Promise<Response> => {
-
-
-  /*
-
-   */
-  var result;
-
-  var options: FindOptions = {
-    where: {
-      companyId: companyId,
-      createdAt: {
-        [Op.gte]: moment(dateStart).startOf('day').toDate(),
-        [Op.lte]: moment(dateEnd).endOf('day').toDate()
-      }
-    },
-  }
-
-  if (dateStart && dateStart.trim() === dateEnd && dateEnd.trim()) {
-    options.attributes = [
-      [Sequelize.literal('EXTRACT(HOUR FROM "createdAt")'), 'horario'],
-      [Sequelize.literal('COUNT(*)'), 'total']
-    ];
-    options.group = 'horario';
-    options.order = [Sequelize.literal('"horario" ASC')];
-
+  if (initialDate && initialDate.trim() === finalDate && finalDate.trim()) {
+    sql = `
+    SELECT
+      COUNT(*) AS total,
+      extract(hour from tick."createdAt") AS horario
+      --to_char(DATE(tick."createdAt"), 'dd-mm-YYYY') as horario
+    FROM
+      "Tickets" tick
+    WHERE
+      tick."companyId" = ${companyId}
+      and DATE(tick."createdAt") >= '${initialDate} 00:00:00'
+      AND DATE(tick."createdAt") <= '${finalDate} 23:59:59'
+    GROUP BY
+      extract(hour from tick."createdAt")
+      --to_char(DATE(tick."createdAt"), 'dd-mm-YYYY')
+    ORDER BY
+      horario asc;
+    `
   } else {
-    options.attributes = [
-      [Sequelize.literal('TO_CHAR(DATE("createdAt"), \'dd/mm/YYYY\')'), 'data'],
-      [Sequelize.fn('COUNT', '*'), 'total']
-    ];
-    options.group = 'data';
-    options.order = [Sequelize.literal('"data" ASC')];
-
-
+    sql = `
+    SELECT
+    COUNT(*) AS total,
+    to_char(DATE(tick."createdAt"), 'dd/mm/YYYY') as data
+  FROM
+    "Tickets" tick
+  WHERE
+    tick."companyId" = ${companyId}
+    and DATE(tick."createdAt") >= '${initialDate}'
+    AND DATE(tick."createdAt") <= '${finalDate}'
+  GROUP BY
+    to_char(DATE(tick."createdAt"), 'dd/mm/YYYY')
+  ORDER BY
+    data asc;
+  `
   }
 
-  result = await TicketTraking.findAll(options);
-  var total = 0;
+  const data: DataReturn[] = await sequelize.query(sql, { type: QueryTypes.SELECT });
 
+  data.forEach((register) => {
+    count += Number(register.total);
+  })
 
-  result = result.map((ticket: any) => {
-    total += Number(ticket.dataValues.total);
-    return {
-      horario: ticket.dataValues.horario,
-      data: ticket.dataValues.data,
-      total: ticket.dataValues.total
-    };
-  });
-
-  return {
-    data: result,
-    count: total
-  };
+  return { data, count };
 
 }
-
-
-export default TicketsDayService;

@@ -1,12 +1,13 @@
 import axios from "axios";
 import Ticket from "../../models/Ticket";
 import QueueIntegrations from "../../models/QueueIntegrations";
-import {WASocket, delay, proto} from "@whiskeysockets/baileys";
-import {getBodyMessage} from "../WbotServices/wbotMessageListener";
-import {logger} from "../../utils/logger";
-import {isNil} from "lodash";
+import { WASocket, delay, proto } from "@whiskeysockets/baileys";
+import { getBodyMessage } from "../WbotServices/wbotMessageListener";
+import logger from "../../utils/logger";
+import { isNil } from "lodash";
 import UpdateTicketService from "../TicketServices/UpdateTicketService";
-
+import moment from "moment";
+import formatBody from "../../helpers/Mustache";
 
 type Session = WASocket & {
   id?: number;
@@ -21,18 +22,15 @@ interface Request {
 
 
 const typebotListener = async ({
-                                 wbot,
-                                 msg,
-                                 ticket,
-                                 typebot
-                               }: Request): Promise<void> => {
+  wbot,
+  msg,
+  ticket,
+  typebot
+}: Request): Promise<void> => {
 
   if (msg.key.remoteJid === 'status@broadcast') return;
 
-
-
-  const {
-    urlN8N: url,
+  const { urlN8N: url,
     typebotExpires,
     typebotKeywordFinish,
     typebotKeywordRestart,
@@ -48,6 +46,8 @@ const typebotListener = async ({
 
   async function createSession(msg, typebot, number) {
     try {
+      const id = Math.floor(Math.random() * 10000000000).toString();
+
       const reqData = JSON.stringify({
         "isStreamEnabled": true,
         "message": "string",
@@ -86,54 +86,47 @@ const typebotListener = async ({
   let dataStart
   let status = false;
   try {
-    const dataLimite = new Date()
-    dataLimite.setMinutes(dataLimite.getMinutes() - Number(typebotExpires));
+    let Agora = new Date();
+    Agora.setMinutes(Agora.getMinutes() - Number(typebotExpires));
 
-
-    if (typebotExpires > 0 && ticket.updatedAt < dataLimite) {
-
+    if (typebotExpires > 0 && Agora > ticket.typebotSessionTime) {
       await ticket.update({
         typebotSessionId: null,
-        chatbot: true
+        typebotSessionTime: null,
+        isBot: true
       });
 
       await ticket.reload();
     }
 
-
-    if (!ticket.typebotSessionId) {
-
-
+    if (isNil(ticket.typebotSessionId)) {
       dataStart = await createSession(msg, typebot, number);
-
-
       sessionId = dataStart.sessionId
       status = true;
       await ticket.update({
         typebotSessionId: sessionId,
         typebotStatus: true,
         useIntegration: true,
-        integrationId: typebot.id
+        integrationId: typebot.id,
+        typebotSessionTime: moment().toDate()
       })
       await ticket.reload();
-
     } else {
       sessionId = ticket.typebotSessionId;
       status = ticket.typebotStatus;
     }
 
-    if (!status) {
-
-      return
-    };
+    if (!status) return;
 
     //let body = getConversationMessage(msg);
 
 
-    if (body !== typebotKeywordFinish && body !== typebotKeywordRestart) {
+    if (body.toLocaleLowerCase().trim() !== typebotKeywordFinish.toLocaleLowerCase().trim() && body.toLocaleLowerCase().trim() !== typebotKeywordRestart.toLocaleLowerCase().trim()) {
       let requestContinue
       let messages
       let input
+      let clientSideActions
+
       if (dataStart?.messages.length === 0 || dataStart === undefined) {
         const reqData = JSON.stringify({
           "message": body
@@ -150,17 +143,18 @@ const typebotListener = async ({
           data: reqData
         };
         requestContinue = await axios.request(config);
-
-
         messages = requestContinue.data?.messages;
         input = requestContinue.data?.input;
+        clientSideActions = requestContinue.data?.clientSideActions;
+
       } else {
         messages = dataStart?.messages;
         input = dataStart?.input;
+        clientSideActions = dataStart?.clientSideActions;
       }
 
       if (messages?.length === 0) {
-        await wbot.sendMessage(`${number}@c.us`, {text: typebotUnknownMessage});
+        await wbot.sendMessage(`${number}@c.us`, { text: typebotUnknownMessage });
       } else {
         for (const message of messages) {
           if (message.type === 'text') {
@@ -253,24 +247,24 @@ const typebotListener = async ({
             if (formattedText.startsWith("#")) {
               let gatilho = formattedText.replace("#", "");
 
+              console.log(gatilho);
+
               try {
                 let jsonGatilho = JSON.parse(gatilho);
 
                 if (jsonGatilho.stopBot && isNil(jsonGatilho.userId) && isNil(jsonGatilho.queueId)) {
-
                   await ticket.update({
                     useIntegration: false,
-                    chatbot: false
+                    isBot: false
                   })
 
                   return;
                 }
                 if (!isNil(jsonGatilho.queueId) && jsonGatilho.queueId > 0 && isNil(jsonGatilho.userId)) {
-
                   await UpdateTicketService({
                     ticketData: {
                       queueId: jsonGatilho.queueId,
-                      chatbot: false,
+                      isBot: false,
                       useIntegration: false,
                       integrationId: null
                     },
@@ -282,12 +276,11 @@ const typebotListener = async ({
                 }
 
                 if (!isNil(jsonGatilho.queueId) && jsonGatilho.queueId > 0 && !isNil(jsonGatilho.userId) && jsonGatilho.userId > 0) {
-
                   await UpdateTicketService({
                     ticketData: {
                       queueId: jsonGatilho.queueId,
                       userId: jsonGatilho.userId,
-                      chatbot: false,
+                      isBot: false,
                       useIntegration: false,
                       integrationId: null
                     },
@@ -309,7 +302,7 @@ const typebotListener = async ({
             await wbot.sendPresenceUpdate('paused', msg.key.remoteJid)
 
 
-            await wbot.sendMessage(msg.key.remoteJid, {text: formattedText});
+            await wbot.sendMessage(msg.key.remoteJid, { text: formatBody(formattedText, ticket) });
           }
 
           if (message.type === 'audio') {
@@ -320,10 +313,10 @@ const typebotListener = async ({
             await wbot.sendPresenceUpdate('paused', msg.key.remoteJid)
             const media = {
               audio: {
-                url: message.content.url,
-                mimetype: 'audio/mp4',
-                ptt: true
+                url: message.content.url
               },
+              mimetype: 'audio/mp4',
+              ptt: true
             }
             await wbot.sendMessage(msg.key.remoteJid, media);
 
@@ -360,28 +353,40 @@ const typebotListener = async ({
             await wbot.sendMessage(msg.key.remoteJid, media);
           }
 
-          // if (message.type === 'video' ) {
-          //     await wbot.presenceSubscribe(msg.key.remoteJid)
-          //     //await delay(2000)
-          //     await wbot.sendPresenceUpdate('composing', msg.key.remoteJid)
-          //     await delay(typebotDelayMessage)
-          //     await wbot.sendPresenceUpdate('paused', msg.key.remoteJid)
-          //     const media = {
-          //         video: {
-          //             url: message.content.url,
-          //         },
+          if (message.type === 'video') {
+            await wbot.presenceSubscribe(msg.key.remoteJid)
+            //await delay(2000)
+            await wbot.sendPresenceUpdate('composing', msg.key.remoteJid)
+            await delay(typebotDelayMessage)
+            await wbot.sendPresenceUpdate('paused', msg.key.remoteJid)
+            const media = {
+              video: {
+                url: message.content.url,
+              },
 
-          //     }
-          //     await wbot.sendMessage(msg.key.remoteJid, media);
-          // }
+            }
+            await wbot.sendMessage(msg.key.remoteJid, media);
+          }
+          if (clientSideActions) {
+            for (const action of clientSideActions) {
+              if (action?.lastBubbleBlockId === message.id) {
+                if (action.wait) {
+                  await delay(action.wait.secondsToWaitFor * 1000)
+                }
+              }
+            }
+          }
         }
+
         if (input) {
           if (input.type === 'choice input') {
             let formattedText = '';
             const items = input.items;
+            let arrayOptions = [];
 
             for (const item of items) {
               formattedText += `▶️ ${item.content}\n`;
+              arrayOptions.push(item.content);
             }
             formattedText = formattedText.replace(/\n$/, '');
             await wbot.presenceSubscribe(msg.key.remoteJid)
@@ -389,32 +394,31 @@ const typebotListener = async ({
             await wbot.sendPresenceUpdate('composing', msg.key.remoteJid)
             await delay(typebotDelayMessage)
             await wbot.sendPresenceUpdate('paused', msg.key.remoteJid)
-            await wbot.sendMessage(msg.key.remoteJid, {text: formattedText});
+            await wbot.sendMessage(msg.key.remoteJid, { text: formattedText });
 
           }
         }
       }
     }
-    if (body === typebotKeywordRestart) {
-
+    if (body.toLocaleLowerCase().trim() === typebotKeywordRestart.toLocaleLowerCase().trim()) {
       await ticket.update({
-        chatbot: true,
+        isBot: true,
         typebotSessionId: null
 
       })
 
       await ticket.reload();
 
-      await wbot.sendMessage(`${number}@c.us`, {text: typebotRestartMessage})
+      await wbot.sendMessage(`${number}@c.us`, { text: typebotRestartMessage })
 
     }
-    if (body === typebotKeywordFinish) {
-
+    if (body.toLocaleLowerCase().trim() === typebotKeywordFinish.toLocaleLowerCase().trim()) {
       await UpdateTicketService({
         ticketData: {
           status: "closed",
           useIntegration: false,
-          integrationId: null
+          integrationId: null,
+          sendFarewellMessage: true
         },
         ticketId: ticket.id,
         companyId: ticket.companyId
@@ -424,7 +428,6 @@ const typebotListener = async ({
     }
   } catch (error) {
     logger.info("Error on typebotListener: ", error);
-
     await ticket.update({
       typebotSessionId: null
     })
