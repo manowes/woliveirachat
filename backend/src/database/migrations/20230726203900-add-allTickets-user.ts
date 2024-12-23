@@ -5,7 +5,7 @@ module.exports = {
     return queryInterface.addColumn("Users", "allTicket", {
       type: DataTypes.STRING,
       allowNull: false,
-      defaultValue: "disable"
+      defaultValue: "disabled"
     });
   },
 

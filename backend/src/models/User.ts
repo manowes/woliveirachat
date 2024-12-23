@@ -13,8 +13,7 @@ import {
   HasMany,
   BelongsToMany,
   ForeignKey,
-  BelongsTo,
-  BeforeDestroy
+  BelongsTo
 } from "sequelize-typescript";
 import { hash, compare } from "bcryptjs";
 import Ticket from "./Ticket";
@@ -23,7 +22,6 @@ import UserQueue from "./UserQueue";
 import Company from "./Company";
 import QuickMessage from "./QuickMessage";
 import Whatsapp from "./Whatsapp";
-import Chatbot from "./Chatbot";
 
 @Table
 class User extends Model<User> {
@@ -48,26 +46,17 @@ class User extends Model<User> {
   @Column
   tokenVersion: number;
 
+  @Default("disabled")
+  @Column
+  spy: string;
+
+  @Default("enabled")
+  @Column
+  isTricked: string;
+
   @Default("admin")
   @Column
   profile: string;
-
-  @Default(null)
-  @Column
-  profileImage: string;
-  
-  @ForeignKey(() => Whatsapp)
-  @Column
-  whatsappId: number;
-
-  @BelongsTo(() => Whatsapp)
-  whatsapp: Whatsapp;
-  
-  @Column
-  super: boolean;
-
-  @Column
-  online: boolean;
 
   @Default("00:00")
   @Column
@@ -77,29 +66,22 @@ class User extends Model<User> {
   @Column
   endWork: string;
 
-  @Default("")
-  @Column
-  color: string;
-
-  @Default("disable")
+  @Default("disabled")
   @Column
   allTicket: string;
-
-  @Default(false)
-  @Column
-  allowGroup: boolean;
-
-  @Default("light")
-  @Column
-  defaultTheme: string;
 
   @Default("closed")
   @Column
   defaultMenu: string;
 
-  @Default("")
-  @Column(DataType.TEXT)
-  farewellMessage: string;
+  @Column
+  super: boolean;
+
+  @Column
+  online: boolean;
+
+  @Column
+  limitAttendance: number;
 
   @CreatedAt
   createdAt: Date;
@@ -127,6 +109,13 @@ class User extends Model<User> {
   })
   quickMessages: QuickMessage[];
 
+  @ForeignKey(() => Whatsapp)
+  @Column
+  whatsappId: number;
+
+  @BelongsTo(() => Whatsapp)
+  whatsapp: Whatsapp;
+
   @BeforeUpdate
   @BeforeCreate
   static hashPassword = async (instance: User): Promise<void> => {
@@ -138,47 +127,6 @@ class User extends Model<User> {
   public checkPassword = async (password: string): Promise<boolean> => {
     return compare(password, this.getDataValue("passwordHash"));
   };
-
-  @Default("disabled")
-  @Column
-  allHistoric: string;
-
-  @HasMany(() => Chatbot, {
-    onUpdate: "SET NULL",
-    onDelete: "SET NULL",
-    hooks: true
-  })
-  chatbot: Chatbot[];
-
-  @Default("disabled")
-  @Column
-  allUserChat: string;
-
-  @Default("enabled")
-  @Column
-  userClosePendingTicket: string;
-
-  @Default("disabled")
-  @Column
-  showDashboard: string;
-
-  @Default(550)
-  @Column
-  defaultTicketsManagerWidth: number;
-
-  @Default("disable")
-  @Column
-  allowRealTime: string;
-
-  @Default("disable")
-  @Column
-  allowConnections: string;
-
-  @BeforeDestroy
-  static async updateChatbotsUsersReferences(user: User) {
-    // Atualizar os registros na tabela Chatbots onde optQueueId é igual ao ID da fila que será excluída
-    await Chatbot.update({ optUserId: null }, { where: { optUserId: user.id } });
-  }
 }
 
 export default User;

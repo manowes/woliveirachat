@@ -5,14 +5,28 @@ import UpdateDeletedUserOpenTicketsStatus from "../../helpers/UpdateDeletedUserO
 
 const DeleteUserService = async (
   id: string | number,
-  companyId: number
+  requestUserId: string | number
 ): Promise<void> => {
   const user = await User.findOne({
     where: { id }
   });
 
+  const requestUser = await User.findByPk(requestUserId);
+
+  if (requestUser.super === false && user.companyId !== requestUser.companyId) {
+    throw new AppError("ERR_FORBIDDEN", 403);
+  }
+
+  if (user.companyId !== requestUser.companyId) {
+    throw new AppError("ERR_FORBIDDEN", 403);
+  }
+
   if (!user) {
     throw new AppError("ERR_NO_USER_FOUND", 404);
+  }
+
+  if (user.super) {
+    throw new AppError("ERR_NO_USER_DELETE");
   }
 
   const userOpenTickets: Ticket[] = await user.$get("tickets", {
@@ -20,7 +34,7 @@ const DeleteUserService = async (
   });
 
   if (userOpenTickets.length > 0) {
-    UpdateDeletedUserOpenTicketsStatus(userOpenTickets, companyId);
+    UpdateDeletedUserOpenTicketsStatus(userOpenTickets, user.companyId);
   }
 
   await user.destroy();

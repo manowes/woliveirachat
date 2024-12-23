@@ -1,167 +1,63 @@
 import { QueryTypes } from "sequelize";
 import sequelize from "../../database";
+import Company from "../../models/Company";
+import moment from "moment";
 
 type Result = {
   id: number;
   currentSchedule: [];
-  startTimeA: string;
-  endTimeA: string;
-  startTimeB: string;
-  endTimeB: string;
+  startTime: string;
+  currentWeekday: string;
+  endTime: string;
   inActivity: boolean;
 };
 
-const VerifyCurrentSchedule = async (companyId?: number, queueId?: number, whatsappId?: number): Promise<Result> => {
-    // @ts-ignore: Unreachable code error
-  if (Number(whatsappId) > 0 && Number(queueId === 0)) {
-    const sql = `
-        select
-        s.id,
-        s.currentWeekday,
-        s.currentSchedule,
-          (s.currentSchedule->>'startTimeA') "startTimeA",
-          (s.currentSchedule->>'endTimeA') "endTimeA",
-          (s.currentSchedule->>'startTimeB') "startTimeB",
-          (s.currentSchedule->>'endTimeB') "endTimeB",
-          ( (
-            case 
-            	when s.currentSchedule->>'startTimeA' = '' then now()::time >= '00:00'::time
-    			ELSE now()::time >= (s.currentSchedule->>'startTimeA')::time	
-            end
- 			) and (
-            case 
-            	when s.currentSchedule->>'endTimeA' = ''then now()::time <= '00:00'::time
-    			ELSE now()::time <= (s.currentSchedule->>'endTimeA')::time	
-            end ) ) or ( (
-            case 
-            	when s.currentSchedule->>'startTimeB' = ''then now()::time >= '00:00'::time
-    			ELSE now()::time >= (s.currentSchedule->>'startTimeB')::time	
-            end
- 			) and (
-            case 
-            	when s.currentSchedule->>'endTimeB' = ''then now()::time <= '00:00'::time
-    			ELSE now()::time <= (s.currentSchedule->>'endTimeB')::time	
-            end 
-          )) "inActivity"
-      from (
-        SELECT
-              c.id,
-              to_char(current_date, 'day') currentWeekday,
-              (array_to_json(array_agg(s))->>0)::jsonb currentSchedule
-        FROM "Whatsapps" c, jsonb_array_elements(c.schedules) s
-        WHERE s->>'weekdayEn' like trim(to_char(current_date, 'day')) and c.id = :whatsappId
-        and c."companyId" = :companyId
-        GROUP BY 1, 2
-      ) s      
-    `;
+const VerifyCurrentSchedule = async (id: string | number): Promise<Result> => {
+  const currentWeekday = new Date().toLocaleDateString('en-US', { weekday: 'long' }).trim().toLowerCase();
 
-    const result: Result = await sequelize.query(sql, {
-      replacements: { whatsappId, companyId },
-      type: QueryTypes.SELECT,
-      plain: true
-    });
+  const company = await Company.findOne({
+    where: { id },
+    attributes: ['id', 'schedules'],
+    raw: true
+  });
 
-    return result;
+  if (!company) {
+    throw new Error('Company not found');
   }
-    // @ts-ignore: Unreachable code error
-  else if (Number(queueId) === 0 && Number(whatsappId) === 0) {
-    const sql = `
-        select
-        s.id,
-        s.currentWeekday,
-        s.currentSchedule,
-          (s.currentSchedule->>'startTimeA') "startTimeA",
-          (s.currentSchedule->>'endTimeA') "endTimeA",
-          (s.currentSchedule->>'startTimeB') "startTimeB",
-          (s.currentSchedule->>'endTimeB') "endTimeB",
-          ( (
-            case 
-            	when s.currentSchedule->>'startTimeA' = '' then now()::time >= '00:00'::time
-    			ELSE now()::time >= (s.currentSchedule->>'startTimeA')::time	
-            end
- 			) and (
-            case 
-            	when s.currentSchedule->>'endTimeA' = ''then now()::time <= '00:00'::time
-    			ELSE now()::time <= (s.currentSchedule->>'endTimeA')::time	
-            end ) ) or ( (
-            case 
-            	when s.currentSchedule->>'startTimeB' = ''then now()::time >= '00:00'::time
-    			ELSE now()::time >= (s.currentSchedule->>'startTimeB')::time	
-            end
- 			) and (
-            case 
-            	when s.currentSchedule->>'endTimeB' = ''then now()::time <= '00:00'::time
-    			ELSE now()::time <= (s.currentSchedule->>'endTimeB')::time	
-            end 
-          )) "inActivity"
-      from (
-        SELECT
-              c.id,
-              to_char(current_date, 'day') currentWeekday,
-              (array_to_json(array_agg(s))->>0)::jsonb currentSchedule
-        FROM "Companies" c, jsonb_array_elements(c.schedules) s
-        WHERE s->>'weekdayEn' like trim(to_char(current_date, 'day')) and c.id = :companyId
-        GROUP BY 1, 2
-      ) s      
-    `;
 
-    const result: Result = await sequelize.query(sql, {
-      replacements: { companyId },
-      type: QueryTypes.SELECT,
-      plain: true
-    });
+  const currentSchedule = company.schedules.find(schedule  =>
+    schedule.weekdayEn.trim().toLowerCase() === currentWeekday
+  );
 
-    return result;
-  } else {
-    const sql = `
-      select
-        s.id,
-        s.currentWeekday,
-        s.currentSchedule,
-          (s.currentSchedule->>'startTimeA') "startTimeA",
-          (s.currentSchedule->>'endTimeA') "endTimeA",
-          (s.currentSchedule->>'startTimeB') "startTimeB",
-          (s.currentSchedule->>'endTimeB') "endTimeB",
-          COALESCE(( (
-            case 
-            	when s.currentSchedule->>'startTimeA' = '' then now()::time >= '00:00'::time
-    			ELSE now()::time >= (s.currentSchedule->>'startTimeA')::time	
-            end
- 			) and (
-            case 
-            	when s.currentSchedule->>'endTimeA' = ''then now()::time <= '00:00'::time
-    			ELSE now()::time <= (s.currentSchedule->>'endTimeA')::time	
-            end ) ) or ( (
-            case 
-            	when s.currentSchedule->>'startTimeB' = ''then now()::time >= '00:00'::time
-    			ELSE now()::time >= (s.currentSchedule->>'startTimeB')::time	
-            end
- 			) and (
-            case 
-            	when s.currentSchedule->>'endTimeB' = ''then now()::time <= '00:00'::time
-    			ELSE now()::time <= (s.currentSchedule->>'endTimeB')::time	
-            end 
-          )),false)  "inActivity"
-      from (
-        SELECT
-              q.id,
-              to_char(current_date, 'day') currentWeekday,
-              (array_to_json(array_agg(s))->>0)::jsonb currentSchedule
-        FROM "Queues" q, jsonb_array_elements(q.schedules) s
-        WHERE s->>'weekdayEn' like trim(to_char(current_date, 'day')) and q.id = :queueId
-        and q."companyId" = :companyId
-        GROUP BY 1, 2
-      ) s     
-    `;
 
-    const result: Result = await sequelize.query(sql, {
-      replacements: { queueId, companyId },
-      type: QueryTypes.SELECT,
-      plain: true
-    });
-
-    return result;
+  if (!currentSchedule || !currentSchedule.startTime || !currentSchedule.endTime) {
+    return;
   }
+
+  const now = moment();
+  const startTime = moment(currentSchedule.startTime, 'hh:mm');
+  const endTime = moment(currentSchedule.endTime, 'hh:mm');
+
+  let inActivity = startTime.isBefore(now) && now.isBefore(endTime);
+
+
+  if (inActivity && currentSchedule.startLunchTime && currentSchedule.endLunchTime) {
+    const startLunchTime = moment(currentSchedule.startLunchTime, 'hh:mm');
+    const endLunchTime = moment(currentSchedule.endLunchTime, 'hh:mm');
+
+    inActivity = !(startLunchTime.isBefore(now) && now.isBefore(endLunchTime));
+  }
+
+  const result: Result = {
+    id: company.id,
+    currentWeekday,
+    currentSchedule,
+    startTime: currentSchedule.startTime,
+    endTime: currentSchedule.endTime,
+    inActivity
+  };
+
+  return result;
 };
 
 export default VerifyCurrentSchedule;

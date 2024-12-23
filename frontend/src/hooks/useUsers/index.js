@@ -11,7 +11,6 @@ const useUsers = () => {
 
     useEffect(() => {
         setLoading(true);
-        const delayDebounceFn = setTimeout(() => {
             const fetchUsers = async () => {
                 try {
                     const { data } = await api.get("/users", {
@@ -26,10 +25,7 @@ const useUsers = () => {
                     toastError(err);
                 }
             };
-
-            fetchUsers();
-        }, 500);
-        return () => clearTimeout(delayDebounceFn);
+            return fetchUsers();
     }, []);
 
     return { users, loading, hasMore, count };

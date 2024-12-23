@@ -18,38 +18,18 @@ interface Request {
   isDefault?: boolean;
   token?: string;
   provider?: string;
-  facebookUserId?: string;
-  facebookUserToken?: string;
-  tokenMeta?: string;
-  channel?: string;
-  facebookPageUserId?: string;
-  maxUseBotQueues?: string;
-  timeUseBotQueues?: string;
-  expiresTicket?: number;
-  allowGroup?: boolean;
   sendIdQueue?: number;
   timeSendQueue?: number;
-  timeInactiveMessage?: string;
-  inactiveMessage?: string;
-  maxUseBotQueuesNPS?: number;
-  expiresTicketNPS?: number;
-  whenExpiresTicket?: string;
-  expiresInactiveMessage?: string;
-  groupAsTicket?: string;
-  importOldMessages?: string;
-  importRecentMessages?:string;
-  importOldMessagesGroups?: boolean;
-  closedTicketsPostImported?: boolean;
-  timeCreateNewTicket?: number;
-  integrationId?: number;
-  schedules?: any[];
   promptId?: number;
-  collectiveVacationMessage?: string;
-  collectiveVacationStart?: string;
-  collectiveVacationEnd?: string;
-  queueIdImportMessages?: number;
-  flowIdNotPhrase?: number;
-  flowIdWelcome?: number;
+  maxUseBotQueues?: number;
+  timeUseBotQueues?: number;
+  expiresTicket?: number;
+  expiresInactiveMessage?: string;
+  allowGroup?: boolean;
+  importOldMessages? : string;
+  importRecentMessages? : string;
+  closedTicketsPostImported? : boolean;
+  importOldMessagesGroups? : boolean;
 }
 
 interface Response {
@@ -58,62 +38,41 @@ interface Response {
 }
 
 const CreateWhatsAppService = async ({
-  name,
-  status = "OPENING",
-  queueIds = [],
-  greetingMessage,
-  complationMessage,
-  outOfHoursMessage,
-  isDefault = false,
-  companyId,
-  token = "",
-  provider = "beta",
-  facebookUserId,
-  facebookUserToken,
-  facebookPageUserId,
-  tokenMeta,
-  channel = "whatsapp",
-  maxUseBotQueues,
-  timeUseBotQueues,
-  expiresTicket,
-  allowGroup = false,
-  timeSendQueue,
-  sendIdQueue,
-  timeInactiveMessage,
-  inactiveMessage,
-  ratingMessage,
-  maxUseBotQueuesNPS,
-  expiresTicketNPS,
-  whenExpiresTicket,
-  expiresInactiveMessage,
-  groupAsTicket,
-  importOldMessages,
-  importRecentMessages,
-  closedTicketsPostImported,
-  importOldMessagesGroups,
-  timeCreateNewTicket,
-  integrationId,
-  schedules,
-  promptId,
-  collectiveVacationEnd,
-  collectiveVacationMessage,
-  collectiveVacationStart,
-  queueIdImportMessages,
-  flowIdNotPhrase,
-  flowIdWelcome
-}: Request): Promise<Response> => {
+                                       name,
+                                       status = "OPENING",
+                                       queueIds = [],
+                                       greetingMessage,
+                                       complationMessage,
+                                       outOfHoursMessage,
+                                       ratingMessage,
+                                       isDefault = false,
+                                       companyId,
+                                       token = "",
+                                       provider = "beta",
+                                       timeSendQueue,
+                                       sendIdQueue,
+                                       promptId,
+                                       maxUseBotQueues = 3,
+                                       timeUseBotQueues = 0,
+                                       expiresTicket = 0,
+                                       expiresInactiveMessage = "",
+                                       allowGroup,
+                                       importOldMessages,
+                                       importRecentMessages,
+                                       closedTicketsPostImported,
+                                       importOldMessagesGroups
+                                     }: Request): Promise<Response> => {
   const company = await Company.findOne({
     where: {
-      id: companyId,
+      id: companyId
     },
-    include: [{ model: Plan, as: "plan" }]
+    include: [{model: Plan, as: "plan"}]
   });
 
   if (company !== null) {
     const whatsappCount = await Whatsapp.count({
       where: {
-        companyId,
-        channel: channel
+        companyId
       }
     });
 
@@ -134,7 +93,7 @@ const CreateWhatsAppService = async ({
         async value => {
           if (!value) return false;
           const nameExists = await Whatsapp.findOne({
-            where: { name: value, channel: channel, companyId }
+            where: {name: value}
           });
           return !nameExists;
         }
@@ -143,23 +102,23 @@ const CreateWhatsAppService = async ({
   });
 
   try {
-    await schema.validate({ name, status, isDefault });
+    await schema.validate({name, status, isDefault});
   } catch (err: any) {
     throw new AppError(err.message);
   }
 
-  const whatsappFound = await Whatsapp.findOne({ where: { companyId } });
+  const whatsappFound = await Whatsapp.findOne({where: {companyId}});
 
-  isDefault = channel === "whatsapp" ? !whatsappFound : false
+  isDefault = !whatsappFound;
 
   let oldDefaultWhatsapp: Whatsapp | null = null;
 
-  if (channel === 'whatsapp' && isDefault) {
+  if (isDefault) {
     oldDefaultWhatsapp = await Whatsapp.findOne({
-      where: { isDefault: true, companyId, channel: channel }
+      where: {isDefault: true, companyId}
     });
     if (oldDefaultWhatsapp) {
-      await oldDefaultWhatsapp.update({ isDefault: false, companyId });
+      await oldDefaultWhatsapp.update({isDefault: false, companyId});
     }
   }
 
@@ -178,7 +137,7 @@ const CreateWhatsAppService = async ({
           async value => {
             if (!value) return false;
             const tokenExists = await Whatsapp.findOne({
-              where: { token: value, channel: channel }
+              where: {token: value}
             });
             return !tokenExists;
           }
@@ -186,7 +145,7 @@ const CreateWhatsAppService = async ({
     });
 
     try {
-      await tokenSchema.validate({ token });
+      await tokenSchema.validate({token});
     } catch (err: any) {
       throw new AppError(err.message);
     }
@@ -204,45 +163,25 @@ const CreateWhatsAppService = async ({
       companyId,
       token,
       provider,
-      channel,
-      facebookUserId,
-      facebookUserToken,
-      facebookPageUserId,
-      tokenMeta,
+      timeSendQueue,
+      sendIdQueue,
+      promptId,
       maxUseBotQueues,
       timeUseBotQueues,
       expiresTicket,
-      allowGroup,
-      timeSendQueue,
-      sendIdQueue,
-      timeInactiveMessage,
-      inactiveMessage,
-      maxUseBotQueuesNPS,
-      expiresTicketNPS,
-      whenExpiresTicket,
       expiresInactiveMessage,
-      groupAsTicket,
+      allowGroup,
       importOldMessages,
       importRecentMessages,
       closedTicketsPostImported,
-      importOldMessagesGroups,
-      timeCreateNewTicket,
-      integrationId,
-      schedules,
-      promptId,
-      collectiveVacationEnd,
-      collectiveVacationMessage,
-      collectiveVacationStart,
-      queueIdImportMessages,
-      flowIdNotPhrase,
-      flowIdWelcome
+      importOldMessagesGroups
     },
-    { include: ["queues"] }
+    {include: ["queues"]}
   );
 
   await AssociateWhatsappQueue(whatsapp, queueIds);
 
-  return { whatsapp, oldDefaultWhatsapp };
+  return {whatsapp, oldDefaultWhatsapp};
 };
 
 export default CreateWhatsAppService;

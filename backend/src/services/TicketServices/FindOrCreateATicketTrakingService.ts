@@ -14,6 +14,20 @@ const FindOrCreateATicketTrakingService = async ({
   whatsappId,
   userId
 }: Params): Promise<TicketTraking> => {
+
+  if (!ticketId){
+    console.trace('ticketId is required')
+    return;
+  }
+  if (!companyId){
+    console.trace('companyId is required')
+    return;
+  }
+  if (!companyId){
+    console.trace('whatsappId is required')
+    return;
+  }
+
   const ticketTraking = await TicketTraking.findOne({
     where: {
       ticketId,
@@ -24,14 +38,15 @@ const FindOrCreateATicketTrakingService = async ({
   });
 
   if (ticketTraking) {
-     return ticketTraking;
+    return ticketTraking;
   }
 
   const newRecord = await TicketTraking.create({
     ticketId,
     companyId,
     whatsappId,
-    userId
+    userId,
+
   });
 
   return newRecord;

@@ -62,7 +62,7 @@ class Prompt extends Model<Prompt> {
   @Column
   voiceRegion:string;
 
-  @AllowNull
+  @AllowNull(true)
   @ForeignKey(() => Queue)
   @Column
   queueId: number;

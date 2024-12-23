@@ -1,25 +1,36 @@
 import express from "express";
 import multer from "multer";
 import uploadConfig from "../config/upload";
-
 import * as ApiController from "../controllers/ApiController";
 import tokenAuth from "../middleware/tokenAuth";
-
 const upload = multer(uploadConfig);
-
 const ApiRoutes = express.Router();
 
-ApiRoutes.post("/send", tokenAuth, upload.array("medias"), ApiController.index);
-// ApiRoutes.post("/send/linkPdf", tokenAuth, ApiController.indexLink);
-ApiRoutes.post("/send/linkImage", tokenAuth, ApiController.indexImage);
-ApiRoutes.post("/checkNumber", tokenAuth, ApiController.checkNumber)
+// rotas para enviar menssagens //
 
-// ApiRoutes.post("/send/linkVideo", tokenAuth, ApiController.indexVideo);
-// ApiRoutes.post("/send/toManyText", tokenAuth, ApiController.indexToMany);
-// ApiRoutes.post("/send/toManyLinkPdf", tokenAuth, ApiController.indexToManyLinkPdf);
-// ApiRoutes.post("/send/toManyImage", tokenAuth, ApiController.indexToManyImage);
+ApiRoutes.post("/messages/send", tokenAuth, upload.array("medias"), ApiController.index);
+ApiRoutes.post("/messages/send/linkPdf", tokenAuth, ApiController.indexLink);
+ApiRoutes.post("/messages/send/linkImage", tokenAuth, ApiController.indexImage);
+ApiRoutes.post("/messages/checkNumber", tokenAuth, ApiController.checkNumber);
+ApiRoutes.post("/messages/send/linkAudio", tokenAuth, ApiController.handleAudioLink);
 
-// retornar os whatsapp e seus status
-// ApiRoutes.get("/getWhatsappsId", tokenAuth, ApiController.indexWhatsappsId);
+// rotas para manipular tickets //
+// trocar fila // 
+ApiRoutes.post("/ticket/QueueUpdate/:ticketId", tokenAuth, ApiController.updateQueueId);
+//encerrarticket
+ApiRoutes.post("/ticket/close/:ticketId", tokenAuth, ApiController.closeTicket);
+
+// adicionar e remover tags //
+ApiRoutes.post("/ticket/TagUpdate", tokenAuth, ApiController.updateTicketTag);
+ApiRoutes.delete("/ticket/TagRemove", tokenAuth, ApiController.removeTicketTag);
+// listar tickets //
+ApiRoutes.get("/ticket/ListTickets", tokenAuth, ApiController.listTicketsByCompany);
+ApiRoutes.get("/ticket/ListByTag/:tagId", tokenAuth, ApiController.listTicketsByTag);
+
+//invoices
+ApiRoutes.get("/invoices", tokenAuth, ApiController.indexApi);
+ApiRoutes.get("/invoices/:Invoiceid", tokenAuth, ApiController.showApi);
+ApiRoutes.post("/invoices/listByCompany", tokenAuth, ApiController.showAllApi);
+ApiRoutes.put("/invoices/:id", tokenAuth, ApiController.updateApi);
 
 export default ApiRoutes;

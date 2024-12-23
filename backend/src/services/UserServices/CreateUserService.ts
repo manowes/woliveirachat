@@ -5,6 +5,7 @@ import { SerializeUser } from "../../helpers/SerializeUser";
 import User from "../../models/User";
 import Plan from "../../models/Plan";
 import Company from "../../models/Company";
+import { request } from "express";
 
 interface Request {
   email: string;
@@ -13,20 +14,14 @@ interface Request {
   queueIds?: number[];
   companyId?: number;
   profile?: string;
+  allTicket?: string;
+  isTricked?: string;
+  whatsappId?: number;
   startWork?: string;
   endWork?: string;
-  whatsappId?: number;
-  allTicket?: string;
-  defaultTheme?: string;
-  defaultMenu?: string;
-  allowGroup?: boolean;
-  allHistoric?: string;
-  allUserChat?: string;
-  userClosePendingTicket?: string;
-  showDashboard?: string;
-  defaultTicketsManagerWidth?: number;
-  allowRealTime?: string;
-  allowConnections?: string;
+  spy?: string;
+  super: boolean;
+  defaultMenu: string;
 }
 
 interface Response {
@@ -43,21 +38,16 @@ const CreateUserService = async ({
   queueIds = [],
   companyId,
   profile = "admin",
+  allTicket,
+  spy,
+  whatsappId,
   startWork,
   endWork,
-  whatsappId,
-  allTicket,
-  defaultTheme,
+  isTricked,
+  super: superUser,
   defaultMenu,
-  allowGroup,
-  allHistoric,
-  allUserChat,
-  userClosePendingTicket,
-  showDashboard,
-  defaultTicketsManagerWidth = 550,
-  allowRealTime,
-  allowConnections
 }: Request): Promise<Response> => {
+
   if (companyId !== undefined) {
     const company = await Company.findOne({
       where: {
@@ -83,7 +73,6 @@ const CreateUserService = async ({
 
   const schema = Yup.object().shape({
     name: Yup.string().required().min(2),
-    allHistoric: Yup.string(),
     email: Yup.string()
       .email()
       .required()
@@ -98,11 +87,12 @@ const CreateUserService = async ({
           return !emailExists;
         }
       ),
-    password: Yup.string().required().min(5)
+    password: Yup.string().required().min(5),
+    super: Yup.boolean().required()
   });
 
   try {
-    await schema.validate({ email, password, name });
+    await schema.validate({ email, password, name, super: superUser });
   } catch (err) {
     throw new AppError(err.message);
   }
@@ -114,20 +104,14 @@ const CreateUserService = async ({
       name,
       companyId,
       profile,
+      allTicket,
+      whatsappId: whatsappId || null,
       startWork,
       endWork,
-      whatsappId: whatsappId || null,
-      allTicket,
-      defaultTheme,
+      spy,
+      isTricked,
+      super: superUser,
       defaultMenu,
-      allowGroup,
-      allHistoric,
-      allUserChat,
-      userClosePendingTicket,
-      showDashboard,
-      defaultTicketsManagerWidth,
-      allowRealTime,
-      allowConnections
     },
     { include: ["queues", "company"] }
   );

@@ -10,6 +10,7 @@ interface Request {
   phrase:string
   id: number
   status: boolean
+  whatsappId: number
 }
 
 const UpdateFlowCampaignService = async ({
@@ -18,11 +19,12 @@ const UpdateFlowCampaignService = async ({
   flowId,
   phrase,
   id,
-  status
+  status,
+  whatsappId
 }: Request): Promise<String> => {
   try {
 
-    const flow = await FlowCampaignModel.update({ name, phrase, flowId, status }, {
+    const flow = await FlowCampaignModel.update({ name, phrase, flowId, status, whatsappId }, {
       where: {id: id}
     });
 

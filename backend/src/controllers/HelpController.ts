@@ -54,8 +54,9 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   });
 
   const io = getIO();
-  io.of(String(companyId))
-  .emit(`company-${companyId}-help`, {
+  io
+    .to(`company-${companyId}-mainchannel`)
+    .emit(`company-${companyId}-help`, {
     action: "create",
     record
   });
@@ -96,8 +97,9 @@ export const update = async (
   });
 
   const io = getIO();
-  io.of(String(companyId))
-  .emit(`company-${companyId}-help`, {
+  io
+    .to(`company-${companyId}-mainchannel`)
+    .emit(`company-${companyId}-help`, {
     action: "update",
     record
   });
@@ -115,8 +117,9 @@ export const remove = async (
   await DeleteService(id);
 
   const io = getIO();
-  io.of(String(companyId))
-  .emit(`company-${companyId}-help`, {
+  io
+    .to(`company-${companyId}-mainchannel`)
+    .emit(`company-${companyId}-help`, {
     action: "delete",
     id
   });

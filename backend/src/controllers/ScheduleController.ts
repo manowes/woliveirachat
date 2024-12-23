@@ -1,5 +1,5 @@
-import { Request, Response } from "express";
-import { getIO } from "../libs/socket";
+import {Request, Response} from "express";
+import {getIO} from "../libs/socket";
 
 import AppError from "../errors/AppError";
 
@@ -9,10 +9,9 @@ import UpdateService from "../services/ScheduleServices/UpdateService";
 import ShowService from "../services/ScheduleServices/ShowService";
 import DeleteService from "../services/ScheduleServices/DeleteService";
 import Schedule from "../models/Schedule";
-
 import path from "path";
 import fs from "fs";
-import { head } from "lodash";
+import {head} from "lodash";
 
 type IndexQuery = {
   searchParam?: string;
@@ -22,10 +21,10 @@ type IndexQuery = {
 };
 
 export const index = async (req: Request, res: Response): Promise<Response> => {
-  const { contactId, userId, pageNumber, searchParam } = req.query as IndexQuery;
-  const { companyId } = req.user;
+  const {contactId, userId, pageNumber, searchParam} = req.query as IndexQuery;
+  const {companyId} = req.user;
 
-  const { schedules, count, hasMore } = await ListService({
+  const {schedules, count, hasMore} = await ListService({
     searchParam,
     contactId,
     userId,
@@ -33,7 +32,7 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
     companyId
   });
 
-  return res.json({ schedules, count, hasMore });
+  return res.json({schedules, count, hasMore});
 };
 
 export const store = async (req: Request, res: Response): Promise<Response> => {
@@ -41,43 +40,27 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     body,
     sendAt,
     contactId,
+    daysR, campId, mediaPath,
     userId,
-    ticketUserId,
-    queueId,
-    openTicket,
-    statusTicket,
-    whatsappId,
-    intervalo = 1,
-		valorIntervalo = 0,
-		enviarQuantasVezes = 1,
-		tipoDias=  4,
-    contadorEnvio = 0,
-    assinar = false
+
   } = req.body;
-  const { companyId } = req.user;
+  const {companyId} = req.user;
 
   const schedule = await CreateService({
     body,
     sendAt,
     contactId,
     companyId,
-    userId,
-    ticketUserId,
-    queueId,
-    openTicket,
-    statusTicket,
-    whatsappId,
-    intervalo,
-    valorIntervalo,
-    enviarQuantasVezes,
-    tipoDias,
-    contadorEnvio,
-    assinar
+    daysR,
+    campId,
+    mediaPath,
+    userId
   });
 
   const io = getIO();
-  io.of(String(companyId))
-  .emit(`company${companyId}-schedule`, {
+  io
+    .to(`company-${companyId}-mainchannel`)
+    .emit("schedule", {
     action: "create",
     schedule
   });
@@ -86,8 +69,8 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
 };
 
 export const show = async (req: Request, res: Response): Promise<Response> => {
-  const { scheduleId } = req.params;
-  const { companyId } = req.user;
+  const {scheduleId} = req.params;
+  const {companyId} = req.user;
 
   const schedule = await ShowService(scheduleId, companyId);
 
@@ -102,15 +85,16 @@ export const update = async (
     throw new AppError("ERR_NO_PERMISSION", 403);
   }
 
-  const { scheduleId } = req.params;
+  const {scheduleId} = req.params;
   const scheduleData = req.body;
-  const { companyId } = req.user;
+  const {companyId} = req.user;
 
-  const schedule = await UpdateService({ scheduleData, id: scheduleId, companyId });
+  const schedule = await UpdateService({scheduleData, id: scheduleId, companyId});
 
   const io = getIO();
-  io.of(String(companyId))
-  .emit(`company${companyId}-schedule`, {
+  io
+    .to(`company-${companyId}-mainchannel`)
+    .emit("schedule", {
     action: "update",
     schedule
   });
@@ -122,26 +106,27 @@ export const remove = async (
   req: Request,
   res: Response
 ): Promise<Response> => {
-  const { scheduleId } = req.params;
-  const { companyId } = req.user;
+  const {scheduleId} = req.params;
+  const {companyId} = req.user;
 
   await DeleteService(scheduleId, companyId);
 
   const io = getIO();
-  io.of(String(companyId))
-  .emit(`company${companyId}-schedule`, {
+  io
+    .to(`company-${companyId}-mainchannel`)
+    .emit("schedule", {
     action: "delete",
     scheduleId
   });
 
-  return res.status(200).json({ message: "Schedule deleted" });
+  return res.status(200).json({message: "Schedule deleted"});
 };
 
 export const mediaUpload = async (
   req: Request,
   res: Response
 ): Promise<Response> => {
-  const { id } = req.params;
+  const {id} = req.params;
   const files = req.files as Express.Multer.File[];
   const file = head(files);
 
@@ -151,9 +136,9 @@ export const mediaUpload = async (
     schedule.mediaName = file.originalname;
 
     await schedule.save();
-    return res.send({ mensagem: "Arquivo Anexado" });
-    } catch (err: any) {
-      throw new AppError(err.message);
+    return res.send({mensagem: "Arquivo Anexado"});
+  } catch (err: any) {
+    throw new AppError(err.message);
   }
 };
 
@@ -161,11 +146,11 @@ export const deleteMedia = async (
   req: Request,
   res: Response
 ): Promise<Response> => {
-  const { id } = req.params;
+  const {id} = req.params;
 
   try {
     const schedule = await Schedule.findByPk(id);
-    const filePath = path.resolve("public", schedule.mediaPath);
+    const filePath = path.resolve("public", `company${schedule.companyId}`, schedule.mediaPath);
     const fileExists = fs.existsSync(filePath);
     if (fileExists) {
       fs.unlinkSync(filePath);
@@ -173,8 +158,8 @@ export const deleteMedia = async (
     schedule.mediaPath = null;
     schedule.mediaName = null;
     await schedule.save();
-    return res.send({ mensagem: "Arquivo Excluído" });
-    } catch (err: any) {
-      throw new AppError(err.message);
+    return res.send({mensagem: "Arquivo Excluído"});
+  } catch (err: any) {
+    throw new AppError(err.message);
   }
 };

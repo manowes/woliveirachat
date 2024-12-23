@@ -1,15 +1,8 @@
-import { getIO } from "../../libs/socket";
-import CompaniesSettings from "../../models/CompaniesSettings";
+import {getIO} from "../../libs/socket";
 import Contact from "../../models/Contact";
 import ContactCustomField from "../../models/ContactCustomField";
-import fs from "fs";
-import path, { join } from "path";
-import logger from "../../utils/logger";
-import { isNil } from "lodash";
-import Whatsapp from "../../models/Whatsapp";
-import * as Sentry from "@sentry/node";
-
-const axios = require('axios');
+import {isNil} from "lodash";
+import {Session} from "../../libs/wbot";
 
 interface ExtraInfo extends ContactCustomField {
   name: string;
@@ -21,223 +14,126 @@ interface Request {
   number: string;
   isGroup: boolean;
   email?: string;
-  profilePicUrl?: string;
-  companyId: number;
-  channel?: string;
-  extraInfo?: ExtraInfo[];
   remoteJid?: string;
+  companyId: number;
+  extraInfo?: ExtraInfo[];
+  disableBot?: false;
   whatsappId?: number;
-  wbot?: any;
-}
 
-const downloadProfileImage = async ({
-  profilePicUrl,
-  companyId,
-  contact
-}) => {
-  const publicFolder = path.resolve(__dirname, "..", "..", "..", "public");
-  let filename;
-
-
-  const folder = path.resolve(publicFolder, `company${companyId}`, "contacts");
-
-  if (!fs.existsSync(folder)) {
-    fs.mkdirSync(folder, { recursive: true });
-    fs.chmodSync(folder, 0o777);
-  }
-
-  try {
-
-    const response = await axios.get(profilePicUrl, {
-      responseType: 'arraybuffer'
-    });
-
-    console.log(contact)
-
-    filename = `${new Date().getTime()}.jpeg`;
-    fs.writeFileSync(join(folder, filename), response.data);
-
-  } catch (error) {
-    console.error(error)
-  }
-
-  return filename
 }
 
 const CreateOrUpdateContactService = async ({
-  name,
-  number: rawNumber,
-  profilePicUrl,
-  isGroup,
-  email = "",
-  channel = "whatsapp",
-  companyId,
-  extraInfo = [],
-  remoteJid = "",
-  whatsappId,
-  wbot
-}: Request): Promise<Contact> => {
-  try {
-    let createContact = false;
-    const publicFolder = path.resolve(__dirname, "..", "..", "..", "public");
-    const number = isGroup ? rawNumber : rawNumber.replace(/[^0-9]/g, "");
-    const io = getIO();
-    let contact: Contact | null;
+                                              name,
+                                              number: rawNumber,
+                                              remoteJid,
+                                              isGroup,
+                                              email = "",
+                                              companyId,
+                                              extraInfo = [],
+                                              disableBot = false,
+                                              whatsappId
+                                            }: Request, wbot: Session, msgContactId): Promise<Contact> => {
+  const number = isGroup ? rawNumber : rawNumber.replace(/[^0-9]/g, "");
 
-    contact = await Contact.findOne({
-      where: { number, companyId }
+
+  const io = getIO();
+  let contact: Contact | null;
+
+  contact = await Contact.findOne({
+    where: {
+      number,
+      companyId
+    }
+  });
+
+  if (contact) {
+    //if contact name is only numbers and passed name is not numbers, update name
+    if (name && (!contact.name || contact.name.match(/^[0-9]*$/)) && !name.match(/^[0-9]*$/)) {
+      contact.changed('name', true);
+      contact.changed('updatedAt', true);
+      let profilePicUrl: string;
+      try {
+        profilePicUrl = await wbot.profilePictureUrl(msgContactId);
+      } catch (e) {
+        console.log("Error getting profile picture 2: " + e);
+        profilePicUrl = contact.profilePicUrl;
+      }
+
+      contact.update({name, profilePicUrl});
+
+    }
+
+    if (contact.remoteJid !== remoteJid) {
+      //check if last update is bigger than 7 days
+      const lastUpdate = new Date(contact.updatedAt);
+      const now = new Date();
+      const diff = now.getTime() - lastUpdate.getTime();
+      const diffDays = Math.ceil(diff / (1000 * 3600 * 24));
+
+
+      contact.changed('updatedAt', true);
+
+      if (diffDays > 7) {
+
+        let profilePicUrl: string;
+        try {
+          profilePicUrl = await wbot.profilePictureUrl(msgContactId);
+        } catch (e) {
+          console.log("Error getting profile picture: " + e);
+          profilePicUrl = contact.profilePicUrl;
+        }
+
+        //add updated at
+
+        contact.update({profilePicUrl, remoteJid, updatedAt: new Date()});
+      } else {
+        contact.update({remoteJid, updatedAt: new Date()});
+      }
+    }
+
+    if (isNil(contact.whatsappId === null)) {
+      contact.update({
+        whatsappId
+      });
+    }
+    io
+      .to(`company-${companyId}-mainchannel`)
+      .emit(`company-${companyId}-contact`, {
+      action: "update",
+      contact
     });
 
-    let updateImage = (!contact || contact?.profilePicUrl !== profilePicUrl && profilePicUrl !== "") && wbot || false;
-
-    if (contact) {
-      contact.remoteJid = remoteJid;
-      contact.profilePicUrl = profilePicUrl || null;
-      contact.isGroup = isGroup;
-      if (isNil(contact.whatsappId)) {
-        const whatsapp = await Whatsapp.findOne({
-          where: { id: whatsappId, companyId }
-        });
-
-
-        if (whatsapp) {
-          contact.whatsappId = whatsappId;
-        }
-      }
-      const folder = path.resolve(publicFolder, `company${companyId}`, "contacts");
-
-      let fileName, oldPath = "";
-      if (contact.urlPicture) {
-
-        oldPath = path.resolve(contact.urlPicture.replace(/\\/g, '/'));
-        fileName = path.join(folder, oldPath.split('\\').pop());
-      }
-      if (!fs.existsSync(fileName) || contact.profilePicUrl === "") {
-        if (wbot && ['whatsapp'].includes(channel)) {
-          try {
-            profilePicUrl = await wbot.profilePictureUrl(remoteJid, "image");
-          } catch (e) {
-            Sentry.captureException(e);
-            profilePicUrl = `${process.env.FRONTEND_URL}/nopicture.png`;
-          }
-          contact.profilePicUrl = profilePicUrl;
-          updateImage = true;
-        }
-      }
-
-      if (contact.name === number) {
-        contact.name = name;
-      }
-
-      await contact.save(); // Ensure save() is called to trigger updatedAt
-      await contact.reload();
-
-    } else if (wbot && ['whatsapp'].includes(channel)) {
-      const settings = await CompaniesSettings.findOne({ where: { companyId } });
-      const { acceptAudioMessageContact } = settings;
-      let newRemoteJid = remoteJid;
-
-      if (!remoteJid && remoteJid !== "") {
-        newRemoteJid = isGroup ? `${rawNumber}@g.us` : `${rawNumber}@s.whatsapp.net`;
-      }
-
-      try {
-        profilePicUrl = await wbot.profilePictureUrl(remoteJid, "image");
-      } catch (e) {
-        Sentry.captureException(e);
-        profilePicUrl = `${process.env.FRONTEND_URL}/nopicture.png`;
-      }
-
-      contact = await Contact.create({
-        name,
-        number,
-        email,
-        isGroup,
-        companyId,
-        channel,
-        acceptAudioMessage: acceptAudioMessageContact === 'enabled' ? true : false,
-        remoteJid: newRemoteJid,
-        profilePicUrl,
-        urlPicture: "",
-        whatsappId
-      });
-
-      createContact = true;
-    } else if (['facebook', 'instagram'].includes(channel)) {
-      contact = await Contact.create({
-        name,
-        number,
-        email,
-        isGroup,
-        companyId,
-        channel,
-        profilePicUrl,
-        urlPicture: "",
-        whatsappId
-      });
+  } else {
+    let profilePicUrl: string;
+    try {
+      profilePicUrl = await wbot.profilePictureUrl(msgContactId);
+    } catch (e) {
+      //console.log("Error getting profile picture", e);
+      profilePicUrl = `${process.env.FRONTEND_URL}/nopicture.png`;
     }
 
+    contact = await Contact.create({
+      name,
+      number,
+      profilePicUrl,
+      email,
+      isGroup,
+      extraInfo,
+      companyId,
+      disableBot,
+      whatsappId
+    });
 
 
-    if (updateImage) {
-
-
-      let filename;
-
-      filename = await downloadProfileImage({
-        profilePicUrl,
-        companyId,
-        contact
-      })
-
-
-      await contact.update({
-        urlPicture: filename,
-        pictureUpdated: true
-      });
-
-      await contact.reload();
-    } else {
-      if (['facebook', 'instagram'].includes(channel)) {
-        let filename;
-
-        filename = await downloadProfileImage({
-          profilePicUrl,
-          companyId,
-          contact
-        })
-
-
-        await contact.update({
-          urlPicture: filename,
-          pictureUpdated: true
-        });
-
-        await contact.reload();
-      }
-    }
-
-    if (createContact) {
-      io.of(String(companyId))
-        .emit(`company-${companyId}-contact`, {
-          action: "create",
-          contact
-        });
-    } else {
-
-      io.of(String(companyId))
-        .emit(`company-${companyId}-contact`, {
-          action: "update",
-          contact
-        });
-
-    }
-
-    return contact;
-  } catch (err) {
-    logger.error("Error to find or create a contact:", err);
-    throw err;
+    io
+      .to(`company-${companyId}-mainchannel`)
+      .emit(`company-${companyId}-contact`, {
+      action: "create",
+      contact
+    });
   }
+
+  return contact;
 };
 
 export default CreateOrUpdateContactService;

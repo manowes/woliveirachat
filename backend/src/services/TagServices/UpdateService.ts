@@ -9,10 +9,9 @@ interface TagData {
   name?: string;
   color?: string;
   kanban?: number;
-  timeLane?: number;
-  nextLaneId?: number;
-  greetingMessageLane: string;
-  rollbackLaneId?: number;
+  msgR?: string;
+  rptDays?: number;
+  actCamp?: number;
 }
 
 interface Request {
@@ -30,11 +29,7 @@ const UpdateUserService = async ({
     name: Yup.string().min(3)
   });
 
-  const { name, color, kanban,
-    timeLane,
-    nextLaneId = null,
-    greetingMessageLane,
-    rollbackLaneId = null} = tagData;
+  const { name, color, kanban, msgR, rptDays, actCamp } = tagData;
 
   try {
     await schema.validate({ name });
@@ -46,10 +41,7 @@ const UpdateUserService = async ({
     name,
     color,
     kanban,
-    timeLane,
-    nextLaneId: String(nextLaneId) === "" ? null : nextLaneId,
-    greetingMessageLane,
-    rollbackLaneId: String(rollbackLaneId) === "" ? null : rollbackLaneId,
+    msgR, rptDays: rptDays || 0, actCamp: actCamp || 0
   });
 
   await tag.reload();

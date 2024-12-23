@@ -1,8 +1,5 @@
 import Message from "../../models/Message";
 import { getIO } from "../../libs/socket";
-import Ticket from "../../models/Ticket";
-import UpdateTicketService from "../TicketServices/UpdateTicketService";
-import CompaniesSettings from "../../models/CompaniesSettings";
 
 const MarkDeleteWhatsAppMessage = async (from: any, timestamp?: any, msgId?: string, companyId?: number): Promise<Message> => {
 
@@ -10,18 +7,19 @@ const MarkDeleteWhatsAppMessage = async (from: any, timestamp?: any, msgId?: str
 
     if (msgId) {
 
-        const messages = await Message.findAll({
+        const messages = await Message.findOne({
             where: {
-                wid: msgId,
+                id: msgId,
                 companyId
             }
         });
 
+        if (messages == null || !messages) {
+            return;
+        }
+
         try {
-            const messageToUpdate = await Message.findOne({
-                where: {
-                    wid: messages[0].wid,
-                },
+            const messageToUpdate = await Message.findByPk(messages.id, {
                 include: [
                     "contact",
                     {
@@ -33,40 +31,18 @@ const MarkDeleteWhatsAppMessage = async (from: any, timestamp?: any, msgId?: str
             });
 
             if (messageToUpdate) {
-                const settings = await CompaniesSettings.findOne({
-                    where: {
-                        companyId: companyId
-                    }
-                });
-
-                const ticket = await Ticket.findOne({
-                    where: {
-                        id: messageToUpdate.ticketId,
-                        companyId
-                    }
-                })
-
-                if (settings.lgpdDeleteMessage === "enabled" && settings.enableLGPD === "enabled") {
-
-                    await messageToUpdate.update({ body: "🚫 _Mensagem Apagada_", isDeleted: true });
-
-                } else {
-                    await messageToUpdate.update({ isDeleted: true });
-
-                }
-
-                await UpdateTicketService({ ticketData: { lastMessage: "🚫 _Mensagem Apagada_" }, ticketId: ticket.id, companyId })
+                await messageToUpdate.update({ isDeleted: true });
 
                 const io = getIO();
-                io.of(String(companyId))
-                    // .to(messageToUpdate.ticketId.toString())
-                    .emit(`appMessage-${messageToUpdate}`, {
-                        action: "update",
-                        message: messageToUpdate
-                    });
+                io.to(messageToUpdate.ticketId.toString()).emit(`appMessage-${messageToUpdate}`, {
+                    action: "update",
+                    message: messageToUpdate
+                });
+
             }
+
         } catch (err) {
-            console.log("Erro ao tentar marcar a mensagem com excluída")
+            console.log("Erro ao tentar marcar a mensagem com excluída > " + err)
         }
 
         return timestamp;

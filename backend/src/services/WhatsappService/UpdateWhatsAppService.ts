@@ -1,12 +1,12 @@
 import * as Yup from "yup";
-import { Op } from "sequelize";
+import {Op} from "sequelize";
 
 import AppError from "../../errors/AppError";
 import Whatsapp from "../../models/Whatsapp";
 import ShowWhatsAppService from "./ShowWhatsAppService";
 import AssociateWhatsappQueue from "./AssociateWhatsappQueue";
 
-interface WhatsappData {
+export interface WhatsappData {
   name?: string;
   status?: string;
   session?: string;
@@ -14,37 +14,23 @@ interface WhatsappData {
   greetingMessage?: string;
   complationMessage?: string;
   outOfHoursMessage?: string;
+  ratingMessage?: string;
   queueIds?: number[];
+  companyId?: number;
   token?: string;
-  maxUseBotQueues?: number;
-  timeUseBotQueues?: string;
-  expiresTicket?: string;
-  allowGroup?: boolean;
   sendIdQueue?: number;
   timeSendQueue?: number;
-  timeInactiveMessage?: string;
-  inactiveMessage?: string;
-  ratingMessage?: string;
-  maxUseBotQueuesNPS?: number;
-  expiresTicketNPS?: number;
-  whenExpiresTicket?: string;
+  promptId?: number;
+  maxUseBotQueues?: number;
+  timeUseBotQueues?: number;
+  expiresTicket?: number;
   expiresInactiveMessage?: string;
-  groupAsTicket?: string;
+
+  allowGroup?: boolean;
   importOldMessages?: string;
   importRecentMessages?: string;
-  importOldMessagesGroups?: boolean;
   closedTicketsPostImported?: boolean;
-  timeCreateNewTicket?: number;
-  integrationId?: number;
-  schedules?: any[];
-  promptId?: number;
-  requestQR?: boolean;
-  collectiveVacationMessage?: string;
-  collectiveVacationStart?: string;
-  collectiveVacationEnd?: string;
-  queueIdImportMessages?: number;
-  flowIdNotPhrase?: number;
-  flowIdWelcome?: number;
+  importOldMessagesGroups?: boolean;
 }
 
 interface Request {
@@ -59,10 +45,10 @@ interface Response {
 }
 
 const UpdateWhatsAppService = async ({
-  whatsappData,
-  whatsappId,
-  companyId
-}: Request): Promise<Response> => {
+                                       whatsappData,
+                                       whatsappId,
+                                       companyId
+                                     }: Request): Promise<Response> => {
   const schema = Yup.object().shape({
     name: Yup.string().min(2),
     status: Yup.string(),
@@ -77,41 +63,26 @@ const UpdateWhatsAppService = async ({
     greetingMessage,
     complationMessage,
     outOfHoursMessage,
+    ratingMessage,
     queueIds = [],
     token,
-    maxUseBotQueues = 0,
-    timeUseBotQueues = 0,
-    expiresTicket = 0,
-    allowGroup,
-    timeSendQueue = 0,
+    timeSendQueue,
     sendIdQueue = null,
-    timeInactiveMessage = 0,
-    inactiveMessage,
-    ratingMessage,
-    maxUseBotQueuesNPS,
-    expiresTicketNPS = 0,
-    whenExpiresTicket,
+    promptId,
+    maxUseBotQueues,
+    timeUseBotQueues,
+    expiresTicket,
     expiresInactiveMessage,
-    groupAsTicket,
+
+    allowGroup,
     importOldMessages,
     importRecentMessages,
     closedTicketsPostImported,
-    importOldMessagesGroups,
-    timeCreateNewTicket = null,
-    integrationId,
-    schedules,
-    promptId,
-    requestQR = false,
-    collectiveVacationEnd,
-    collectiveVacationMessage,
-    collectiveVacationStart,
-    queueIdImportMessages,
-    flowIdNotPhrase,
-    flowIdWelcome
+    importOldMessagesGroups
   } = whatsappData;
 
   try {
-    await schema.validate({ name, status, isDefault });
+    await schema.validate({name, status, isDefault});
   } catch (err: any) {
     throw new AppError(err.message);
   }
@@ -126,17 +97,16 @@ const UpdateWhatsAppService = async ({
     oldDefaultWhatsapp = await Whatsapp.findOne({
       where: {
         isDefault: true,
-        id: { [Op.not]: whatsappId },
+        id: {[Op.not]: whatsappId},
         companyId
       }
     });
     if (oldDefaultWhatsapp) {
-      await oldDefaultWhatsapp.update({ isDefault: false });
+      await oldDefaultWhatsapp.update({isDefault: false});
     }
   }
-  // console.log("GETTING WHATSAPP SHOW WHATSAPP 1", whatsappId, companyId)
-  const whatsapp = await ShowWhatsAppService(whatsappId, companyId);
 
+  const whatsapp = await ShowWhatsAppService(whatsappId, companyId);
 
   await whatsapp.update({
     name,
@@ -145,44 +115,27 @@ const UpdateWhatsAppService = async ({
     greetingMessage,
     complationMessage,
     outOfHoursMessage,
+    ratingMessage,
     isDefault,
     companyId,
     token,
-    maxUseBotQueues: maxUseBotQueues || 0,
-    timeUseBotQueues: timeUseBotQueues || 0,
-    expiresTicket: expiresTicket || 0,
-    allowGroup,
     timeSendQueue,
     sendIdQueue,
-    timeInactiveMessage,
-    inactiveMessage,
-    ratingMessage,
-    maxUseBotQueuesNPS,
-    expiresTicketNPS,
-    whenExpiresTicket,
+    promptId,
+    maxUseBotQueues,
+    timeUseBotQueues,
+    expiresTicket,
     expiresInactiveMessage,
-    groupAsTicket,
+    allowGroup,
     importOldMessages,
     importRecentMessages,
     closedTicketsPostImported,
-    importOldMessagesGroups,
-    timeCreateNewTicket,
-    integrationId,
-    schedules,
-    promptId,
-    collectiveVacationEnd,
-    collectiveVacationMessage,
-    collectiveVacationStart,
-    queueIdImportMessages,
-    flowIdNotPhrase,
-    flowIdWelcome
+    importOldMessagesGroups
   });
 
-  if (!requestQR) {
-    await AssociateWhatsappQueue(whatsapp, queueIds);
-  }
+  await AssociateWhatsappQueue(whatsapp, queueIds);
 
-  return { whatsapp, oldDefaultWhatsapp };
+  return {whatsapp, oldDefaultWhatsapp};
 };
 
 export default UpdateWhatsAppService;

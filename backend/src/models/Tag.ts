@@ -9,13 +9,12 @@ import {
   BelongsToMany,
   ForeignKey,
   BelongsTo,
-  HasMany
+  HasMany,
+  DataType
 } from "sequelize-typescript";
 import Company from "./Company";
 import Ticket from "./Ticket";
 import TicketTag from "./TicketTag";
-import Contact from "./Contact";
-import ContactTag from "./ContactTag";
 
 @Table
 class Tag extends Model<Tag> {
@@ -30,20 +29,11 @@ class Tag extends Model<Tag> {
   @Column
   color: string;
 
-  @Column
-  kanban: number;
-
   @HasMany(() => TicketTag)
   ticketTags: TicketTag[];
 
   @BelongsToMany(() => Ticket, () => TicketTag)
   tickets: Ticket[];
-
-  @BelongsToMany(() => Contact, () => ContactTag)
-  contacts: Array<Contact & { ContactTag: ContactTag }>;
-
-  @HasMany(() => ContactTag)
-  contactTags: ContactTag[];
 
   @ForeignKey(() => Company)
   @Column
@@ -59,16 +49,30 @@ class Tag extends Model<Tag> {
   updatedAt: Date;
 
   @Column
-  timeLane: number;
+  kanban: number;
 
-	@Column
-  nextLaneId: number;
-	
-  @Column
-  greetingMessageLane: string;
+  @Column(DataType.TEXT)
+  msgR: string;
+
+  @Column(DataType.TIME)
+  recurrentTime: string | null;
+
+  @Column({
+    type: DataType.INTEGER,
+    allowNull: true,
+  })
+  actCamp: number | null;
+
+  @Column({
+    type: DataType.INTEGER,
+    allowNull: true,
+  })
+  rptDays: number | null;
+
 
   @Column
-  rollbackLaneId: number;
+  mediaPath: string;
+
 }
 
 export default Tag;

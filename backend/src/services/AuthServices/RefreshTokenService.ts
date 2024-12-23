@@ -30,18 +30,14 @@ export const RefreshTokenService = async (
     const decoded = verify(token, authConfig.refreshSecret);
     const { id, tokenVersion, companyId } = decoded as RefreshTokenPayload;
 
-    const user = await ShowUserService(id, companyId);
-
-    if (user.tokenVersion !== tokenVersion) {
-      res.clearCookie("jrt");
-      throw new AppError("ERR_SESSION_EXPIRED", 401);
-    }
+    const user = await ShowUserService(id);
 
     const newToken = createAccessToken(user);
     const refreshToken = createRefreshToken(user);
 
     return { user, newToken, refreshToken };
   } catch (err) {
+    console.log(err);
     res.clearCookie("jrt");
     throw new AppError("ERR_SESSION_EXPIRED", 401);
   }

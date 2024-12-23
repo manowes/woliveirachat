@@ -1,14 +1,12 @@
-import { getIO } from "../../libs/socket";
-import Contact from "../../models/Contact";
+import {getIO} from "../../libs/socket";
 import Message from "../../models/Message";
-import Queue from "../../models/Queue";
-import Tag from "../../models/Tag";
 import Ticket from "../../models/Ticket";
-import User from "../../models/User";
 import Whatsapp from "../../models/Whatsapp";
+import OldMessage from "../../models/OldMessage";
+import Tag from "../../models/Tag";
 
-export interface MessageData {
-  wid: string;
+interface MessageData {
+  id: string;
   ticketId: number;
   body: string;
   contactId?: number;
@@ -18,72 +16,48 @@ export interface MessageData {
   mediaUrl?: string;
   ack?: number;
   queueId?: number;
-  channel?: string;
-  ticketTrakingId?: number;
-  isPrivate?: boolean;
-  ticketImported?: any;
-  isForwarded?: boolean;
 }
+
 interface Request {
   messageData: MessageData;
+  ticket: Ticket;
   companyId: number;
 }
 
 const CreateMessageService = async ({
-  messageData,
-  companyId
-}: Request): Promise<Message> => {
-  await Message.upsert({ ...messageData, companyId });
+                                      messageData,
+                                      ticket,
+                                      companyId
+                                    }: Request): Promise<Message> => {
 
-  const message = await Message.findOne({
-    where: {
-      wid: messageData.wid,
-      companyId
-    },
-    include: [
-      "contact",
-      {
-        model: Ticket,
-        as: "ticket",
-        include: [
-          {
-            model: Contact,
-            attributes: ["id", "name", "number", "email", "profilePicUrl", "acceptAudioMessage", "active", "urlPicture", "companyId"],
-            include: ["extraInfo", "tags"]
-          },
-          {
-            model: Queue,
-            attributes: ["id", "name", "color"]
-          },
-          {
-            model: Whatsapp,
-            attributes: ["id", "name", "groupAsTicket"]
-          },
-          {
-            model: User,
-            attributes: ["id", "name"]
-          },
-          {
-            model: Tag,
-            as: "tags",
-            attributes: ["id", "name", "color"]
-          }
-        ]
-      },
-      {
-        model: Message,
-        as: "quotedMsg",
-        include: ["contact"]
-      }
-    ]
-  });
 
-  if (message.ticket.queueId !== null && message.queueId === null) {
-    await message.update({ queueId: message.ticket.queueId });
-  }
+  await Message.upsert({...messageData, companyId});
 
-  if (message.isPrivate) {
-    await message.update({ wid: `PVT${message.id}` });
+  const message = await Message.findByPk(messageData.id, {
+		include: [
+			"contact",
+			{
+				model: Ticket,
+				as: "ticket",
+				include: ["contact", "queue", "whatsapp"]
+			},
+			{
+				model: Message,
+				as: "quotedMsg",
+				include: ["contact"]
+			},
+			{
+				model: OldMessage,
+				as: "oldMessages"
+			}
+		]
+	});
+
+  await ticket.contact.update({presence: "available"});
+  await ticket.contact.reload();
+
+  if (ticket.queueId !== null && message.queueId === null) {
+    await message.update({queueId: ticket.queueId});
   }
 
   if (!message) {
@@ -91,22 +65,24 @@ const CreateMessageService = async ({
   }
 
   const io = getIO();
+  io.to(message.ticketId.toString())
+    .to(`company-${companyId}-${ticket.status}`)
+    .to(`company-${companyId}-notification`)
+    .to(`queue-${message.queueId}-notification`)
+    .to(`queue-${message.queueId}-${ticket.status}`)
 
-  if (!messageData?.ticketImported) {
-    // console.log("emitiu socket 96", message.ticketId)
+    .emit(`company-${companyId}-appMessage`, {
+      action: "create",
+      message,
+      ticket: ticket,
+      contact: ticket.contact
+    });
 
-    io.of(String(companyId))
-      // .to(message.ticketId.toString())
-      // .to(message.ticket.status)
-      // .to("notification")
-      .emit(`company-${companyId}-appMessage`, {
-        action: "create",
-        message,
-        ticket: message.ticket,
-        contact: message.ticket.contact
-      });
-  }
-
+  io.to(`company-${companyId}-mainchannel`)
+    .emit(`company-${companyId}-contact`, {
+      action: "update",
+      contact: ticket.contact
+    });
 
   return message;
 };
